@@ -1,1 +1,4 @@
 bin/
+
+# Go dependency snapshots generated locally.
+chaincode/*/vendor/
