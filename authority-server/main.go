@@ -19,9 +19,10 @@ type RegisterRequest struct {
 }
 
 type RegisterResponse struct {
-	Message string          `json:"message"`
-	Request RegisterRequest `json:"request"`
-	UserDID string          `json:"userDID,omitempty"`
+	Message   string          `json:"message"`
+	Request   RegisterRequest `json:"request"`
+	UserDID   string          `json:"userDID,omitempty"`
+	PIMgrAddr string          `json:"pimgrAddr,omitempty"`
 }
 
 func main() {
@@ -61,9 +62,15 @@ func registerHandler(fabricGateway *FabricGateway) http.HandlerFunc {
 			http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 			return
 		}
+		normalizeRegisterRequest(&req)
+		if err := validateRegisterRequest(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		log.Printf("received register request: %+v", req)
 
+		// Ask IDMgr to generate a novel identity DID and PIMgr for the user.
 		result, err := fabricGateway.Contract.SubmitTransaction("RegisterIdentity")
 		if err != nil {
 			log.Printf("failed to submit RegisterIdentity transaction: %v", err)
@@ -74,12 +81,80 @@ func registerHandler(fabricGateway *FabricGateway) http.HandlerFunc {
 		userDID := string(result)
 		log.Printf("registered identity DID: %s", userDID)
 
+		// Get the PIMgr address to set the user's information.
+		result, err = fabricGateway.Contract.EvaluateTransaction("GetPIMgr", userDID)
+		if err != nil {
+			log.Printf("failed to evaluate GetPIMgr transaction: %v", err)
+			http.Error(w, fmt.Sprintf("failed to get PIMgr address: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		pimgrAddr := string(result)
+		if pimgrAddr == "" {
+			log.Printf("empty PIMgr address for DID: %s", userDID)
+			http.Error(w, "failed to get PIMgr address: empty result", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("loaded PIMgr address: %s", pimgrAddr)
+
+		// Set the user's information into the PIMgr.
+		if _, err := fabricGateway.Contract.SubmitTransaction(
+			"SetProfile",
+			pimgrAddr,
+			req.UserName,
+			req.IDCardNumber,
+			req.Email,
+			req.Phone,
+		); err != nil {
+			log.Printf("failed to submit SetProfile transaction: %v", err)
+			http.Error(w, fmt.Sprintf("failed to set profile: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("profile set for DID: %s", userDID)
+
+		// Set the user's public key into the PIMgr.
+		if _, err := fabricGateway.Contract.SubmitTransaction("SetPublicKey", pimgrAddr, req.PublicKey); err != nil {
+			log.Printf("failed to submit SetPublicKey transaction: %v", err)
+			http.Error(w, fmt.Sprintf("failed to set public key: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("public key set for DID: %s", userDID)
+
 		writeJSON(w, http.StatusOK, RegisterResponse{
-			Message: "identity registered",
-			Request: req,
-			UserDID: userDID,
+			Message:   "identity registered",
+			Request:   req,
+			UserDID:   userDID,
+			PIMgrAddr: pimgrAddr,
 		})
 	}
+}
+
+func normalizeRegisterRequest(req *RegisterRequest) {
+	req.UserName = strings.TrimSpace(req.UserName)
+	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.PublicKey = strings.TrimSpace(req.PublicKey)
+}
+
+func validateRegisterRequest(req RegisterRequest) error {
+	if req.UserName == "" {
+		return fmt.Errorf("userName is required")
+	}
+	if req.IDCardNumber == "" {
+		return fmt.Errorf("idCardNumber is required")
+	}
+	if req.Email == "" {
+		return fmt.Errorf("email is required")
+	}
+	if req.Phone == "" {
+		return fmt.Errorf("phone is required")
+	}
+	if req.PublicKey == "" {
+		return fmt.Errorf("publicKey is required")
+	}
+
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {
