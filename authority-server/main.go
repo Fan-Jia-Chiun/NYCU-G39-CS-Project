@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type RegisterRequest struct {
@@ -23,6 +26,19 @@ type RegisterResponse struct {
 	Request   RegisterRequest `json:"request"`
 	UserDID   string          `json:"userDID,omitempty"`
 	PIMgrAddr string          `json:"pimgrAddr,omitempty"`
+	BuyerDID  string          `json:"buyerDID,omitempty"`
+	SellerDID string          `json:"sellerDID,omitempty"`
+}
+
+type TradingIdentityRegistrationRequest struct {
+	IdentityDID string `json:"identityDID"`
+}
+
+type TradingIdentityRegistrationResponse struct {
+	Message     string `json:"message"`
+	IdentityDID string `json:"identityDID"`
+	BuyerDID    string `json:"buyerDID"`
+	SellerDID   string `json:"sellerDID"`
 }
 
 func main() {
@@ -36,20 +52,23 @@ func main() {
 	log.Printf("Connected to channel: %s", fabricGateway.ChannelName)
 	log.Printf("Loaded contract: %s", fabricGateway.ChaincodeName)
 
+	transactionServerURL := envOrDefault("TRANSACTION_SERVER_URL", "http://localhost:8082/trading-identities")
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/register", registerHandler(fabricGateway))
+	mux.HandleFunc("/register", registerHandler(fabricGateway, transactionServerURL))
 
 	port := "8081"
 	addr := ":" + port
 	log.Printf("Authority Server PID: %d", os.Getpid())
 	log.Printf("Authority Server IP: %s", localIPSummary())
+	log.Printf("Transaction Server endpoint: %s", transactionServerURL)
 	log.Printf("Authority Server listening on: %s", port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("authority server failed: %v", err)
 	}
 }
 
-func registerHandler(fabricGateway *FabricGateway) http.HandlerFunc {
+func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -120,13 +139,56 @@ func registerHandler(fabricGateway *FabricGateway) http.HandlerFunc {
 		}
 		log.Printf("public key set for DID: %s", userDID)
 
+		tradingIdentity, err := registerTradingIdentity(transactionServerURL, userDID)
+		if err != nil {
+			log.Printf("failed to register trading identity: %v", err)
+			http.Error(w, fmt.Sprintf("failed to register trading identity: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("trading identity registered for DID %s: buyer=%s seller=%s", userDID, tradingIdentity.BuyerDID, tradingIdentity.SellerDID)
+
 		writeJSON(w, http.StatusOK, RegisterResponse{
 			Message:   "identity registered",
 			Request:   req,
 			UserDID:   userDID,
 			PIMgrAddr: pimgrAddr,
+			BuyerDID:  tradingIdentity.BuyerDID,
+			SellerDID: tradingIdentity.SellerDID,
 		})
 	}
+}
+
+func registerTradingIdentity(transactionServerURL string, identityDID string) (*TradingIdentityRegistrationResponse, error) {
+	body, err := json.Marshal(TradingIdentityRegistrationRequest{IdentityDID: identityDID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode trading identity request: %w", err)
+	}
+
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post(transactionServerURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to call transaction server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read transaction server response: %w", err)
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("transaction server returned %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
+	}
+
+	var result TradingIdentityRegistrationResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode transaction server response: %w", err)
+	}
+	if result.BuyerDID == "" || result.SellerDID == "" {
+		return nil, fmt.Errorf("transaction server returned empty buyerDID or sellerDID")
+	}
+
+	return &result, nil
 }
 
 func normalizeRegisterRequest(req *RegisterRequest) {

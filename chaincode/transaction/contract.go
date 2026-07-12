@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -32,17 +34,19 @@ func (c *TransactionIdentityRegistryContract) RegisterTradingIdentity(ctx contra
 		return nil, fmt.Errorf("trading identity already exists for identity DID: %s", identityDID)
 	}
 
-	txID := ctx.GetStub().GetTxID()
 	now, err := txTimestamp(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	buyerDID := deriveTradingDID(identityDID, "buyer")
+	sellerDID := deriveTradingDID(identityDID, "seller")
+
 	record := TradingIdentity{
 		ObjectType:  objectTypeTradingIdentity,
 		IdentityDID: identityDID,
-		BuyerDID:    "did:nycu-g39:buyer:" + txID,
-		SellerDID:   "did:nycu-g39:seller:" + txID,
+		BuyerDID:    buyerDID,
+		SellerDID:   sellerDID,
 		Status:      tradingIdentityStatusActive,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -171,6 +175,14 @@ func buyerDIDKey(buyerDID string) string {
 // sellerDIDKey builds the reverse index key for a seller DID.
 func sellerDIDKey(sellerDID string) string {
 	return "SELLER_DID:" + sellerDID
+}
+
+// deriveTradingDID deterministically derives a role-specific trading DID.
+func deriveTradingDID(identityDID string, role string) string {
+	seed := "nycu-g39:trading-did:v1:" + role + ":" + identityDID
+	hash := sha256.Sum256([]byte(seed))
+
+	return "did:nycu-g39:" + role + ":" + hex.EncodeToString(hash[:])
 }
 
 // tradingIdentityExists checks whether an identity DID already has a mapping.
