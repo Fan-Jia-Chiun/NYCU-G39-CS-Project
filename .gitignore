@@ -2,3 +2,6 @@ bin/
 
 # Go dependency snapshots generated locally.
 chaincode/*/vendor/
+
+# Local client identity keys.
+client/keys/
