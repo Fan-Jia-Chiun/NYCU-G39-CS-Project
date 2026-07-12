@@ -25,15 +25,21 @@ func main() {
 	idCardNumber := flag.String("idCardNumber", "", "ID card number")
 	email := flag.String("email", "", "email")
 	phone := flag.String("phone", "", "phone")
-	publicKey := flag.String("publicKey", "", "public key")
+	keyDir := flag.String("keyDir", defaultKeyDir(), "directory for the local identity key pair")
 	flag.Parse()
+
+	resolvedPublicKey, err := ensureIdentityKeyPair(*keyDir)
+	if err != nil {
+		log.Printf("failed to prepare public key: %v", err)
+		os.Exit(1)
+	}
 
 	req := RegisterRequest{
 		UserName:     *userName,
 		IDCardNumber: *idCardNumber,
 		Email:        *email,
 		Phone:        *phone,
-		PublicKey:    *publicKey,
+		PublicKey:    resolvedPublicKey,
 	}
 
 	if err := callRegister(*registerURL, req); err != nil {

@@ -45,6 +45,7 @@ func (c *IdentityContract) RegisterIdentity(ctx contractapi.TransactionContextIn
 		UpdatedAt:  now,
 	}
 
+	// Write the PIMgr into CouchDB.
 	if err := putPIMgr(ctx, &pimgr); err != nil {
 		return "", err
 	}
