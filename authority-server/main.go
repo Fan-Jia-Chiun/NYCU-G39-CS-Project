@@ -32,6 +32,7 @@ type RegisterResponse struct {
 
 type TradingIdentityRegistrationRequest struct {
 	IdentityDID string `json:"identityDID"`
+	PublicKey   string `json:"publicKey"`
 }
 
 type TradingIdentityRegistrationResponse struct {
@@ -139,7 +140,7 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 		}
 		log.Printf("public key set for DID: %s", userDID)
 
-		tradingIdentity, err := registerTradingIdentity(transactionServerURL, userDID)
+		tradingIdentity, err := registerTradingIdentity(transactionServerURL, userDID, req.PublicKey)
 		if err != nil {
 			log.Printf("failed to register trading identity: %v", err)
 			http.Error(w, fmt.Sprintf("failed to register trading identity: %v", err), http.StatusInternalServerError)
@@ -158,8 +159,11 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 	}
 }
 
-func registerTradingIdentity(transactionServerURL string, identityDID string) (*TradingIdentityRegistrationResponse, error) {
-	body, err := json.Marshal(TradingIdentityRegistrationRequest{IdentityDID: identityDID})
+func registerTradingIdentity(transactionServerURL string, identityDID string, publicKey string) (*TradingIdentityRegistrationResponse, error) {
+	body, err := json.Marshal(TradingIdentityRegistrationRequest{
+		IdentityDID: identityDID,
+		PublicKey:   publicKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode trading identity request: %w", err)
 	}

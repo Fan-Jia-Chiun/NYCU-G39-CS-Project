@@ -65,7 +65,7 @@ func ensureIdentityKeyPair(keyDir string) (string, error) {
 	if !os.IsNotExist(err) {
 		return "", err
 	}
-	
+
 	if _, err := os.Stat(publicKeyPath); err == nil {
 		return "", fmt.Errorf("public key exists but private key is missing: %s", privateKeyPath)
 	} else if !os.IsNotExist(err) {
