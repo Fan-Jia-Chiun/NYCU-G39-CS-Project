@@ -37,7 +37,7 @@ func ensureIdentityKeyPair(keyDir string) (string, error) {
 		return "", fmt.Errorf("key directory is required")
 	}
 
-	privateKeyPath := filepath.Join(keyDir, privateKeyFileName)
+	privateKeyPath := privateKeyPath(keyDir)
 	publicKeyPath := filepath.Join(keyDir, publicKeyFileName)
 
 	privateKey, err := readPrivateKey(privateKeyPath)
@@ -102,6 +102,10 @@ func ensureIdentityKeyPair(keyDir string) (string, error) {
 	}
 
 	return publicKeyText, nil
+}
+
+func privateKeyPath(keyDir string) string {
+	return filepath.Join(strings.TrimSpace(keyDir), privateKeyFileName)
 }
 
 func readPrivateKey(privateKeyPath string) (*ecdsa.PrivateKey, error) {

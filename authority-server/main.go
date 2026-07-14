@@ -31,15 +31,15 @@ type RegisterResponse struct {
 }
 
 type TradingIdentityRegistrationRequest struct {
-	IdentityDID string `json:"identityDID"`
-	PublicKey   string `json:"publicKey"`
+	UserDID   string `json:"userDID"`
+	PublicKey string `json:"publicKey"`
 }
 
 type TradingIdentityRegistrationResponse struct {
-	Message     string `json:"message"`
-	IdentityDID string `json:"identityDID"`
-	BuyerDID    string `json:"buyerDID"`
-	SellerDID   string `json:"sellerDID"`
+	Message   string `json:"message"`
+	UserDID   string `json:"userDID"`
+	BuyerDID  string `json:"buyerDID"`
+	SellerDID string `json:"sellerDID"`
 }
 
 func main() {
@@ -90,7 +90,7 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 
 		log.Printf("received register request: %+v", req)
 
-		// Ask IDMgr to generate a novel identity DID and PIMgr for the user.
+		// Ask IDMgr to generate a novel user DID and PIMgr for the user.
 		result, err := fabricGateway.Contract.SubmitTransaction("RegisterIdentity")
 		if err != nil {
 			log.Printf("failed to submit RegisterIdentity transaction: %v", err)
@@ -99,7 +99,7 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 		}
 
 		userDID := string(result)
-		log.Printf("registered identity DID: %s", userDID)
+		log.Printf("registered user DID: %s", userDID)
 
 		// Get the PIMgr address to set the user's information.
 		result, err = fabricGateway.Contract.EvaluateTransaction("GetPIMgr", userDID)
@@ -159,10 +159,10 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 	}
 }
 
-func registerTradingIdentity(transactionServerURL string, identityDID string, publicKey string) (*TradingIdentityRegistrationResponse, error) {
+func registerTradingIdentity(transactionServerURL string, userDID string, publicKey string) (*TradingIdentityRegistrationResponse, error) {
 	body, err := json.Marshal(TradingIdentityRegistrationRequest{
-		IdentityDID: identityDID,
-		PublicKey:   publicKey,
+		UserDID:   userDID,
+		PublicKey: publicKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode trading identity request: %w", err)

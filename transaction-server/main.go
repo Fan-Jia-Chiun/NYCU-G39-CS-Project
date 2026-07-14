@@ -11,14 +11,15 @@ import (
 )
 
 type RegisterTradingIdentityRequest struct {
-	IdentityDID string `json:"identityDID"`
+	UserDID   string `json:"userDID"`
+	PublicKey string `json:"publicKey"`
 }
 
 type RegisterTradingIdentityResponse struct {
-	Message     string `json:"message"`
-	IdentityDID string `json:"identityDID"`
-	BuyerDID    string `json:"buyerDID"`
-	SellerDID   string `json:"sellerDID"`
+	Message   string `json:"message"`
+	UserDID   string `json:"userDID"`
+	BuyerDID  string `json:"buyerDID"`
+	SellerDID string `json:"sellerDID"`
 }
 
 func main() {
@@ -36,6 +37,7 @@ func main() {
 	mux.HandleFunc("/health", runningHandler)
 	mux.HandleFunc("/transaction", transactionHandler)
 	mux.HandleFunc("/trading-identities", registerTradingIdentityHandler(fabricGateway))
+	mux.HandleFunc("/login", loginHandler(fabricGateway))
 
 	port := "8082"
 	addr := ":" + port
@@ -111,15 +113,20 @@ func registerTradingIdentityHandler(fabricGateway *FabricGateway) http.HandlerFu
 			return
 		}
 
-		req.IdentityDID = strings.TrimSpace(req.IdentityDID)
-		if req.IdentityDID == "" {
-			http.Error(w, "identityDID is required", http.StatusBadRequest)
+		req.UserDID = strings.TrimSpace(req.UserDID)
+		req.PublicKey = strings.TrimSpace(req.PublicKey)
+		if req.UserDID == "" {
+			http.Error(w, "userDID is required", http.StatusBadRequest)
+			return
+		}
+		if req.PublicKey == "" {
+			http.Error(w, "publicKey is required", http.StatusBadRequest)
 			return
 		}
 
 		log.Printf("received trading identity registration request: %+v", req)
 
-		result, err := fabricGateway.Contract.SubmitTransaction("RegisterTradingIdentity", req.IdentityDID)
+		result, err := fabricGateway.Contract.SubmitTransaction("RegisterTradingIdentity", req.UserDID)
 		if err != nil {
 			log.Printf("failed to submit RegisterTradingIdentity transaction: %v", err)
 			http.Error(w, fmt.Sprintf("failed to register trading identity: %v", err), http.StatusInternalServerError)
@@ -136,13 +143,20 @@ func registerTradingIdentityHandler(fabricGateway *FabricGateway) http.HandlerFu
 			return
 		}
 
-		log.Printf("registered trading identity for DID %s: buyer=%s seller=%s", req.IdentityDID, ccResult.BuyerDID, ccResult.SellerDID)
+		log.Printf("registered trading identity for DID %s: buyer=%s seller=%s", req.UserDID, ccResult.BuyerDID, ccResult.SellerDID)
+
+		if _, err := fabricGateway.Contract.SubmitTransaction("SetPublicKey", req.UserDID, req.PublicKey); err != nil {
+			log.Printf("failed to submit SetPublicKey transaction: %v", err)
+			http.Error(w, fmt.Sprintf("failed to set trading user public key: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("public key set on transaction chain for DID: %s", req.UserDID)
 
 		writeJSON(w, http.StatusOK, RegisterTradingIdentityResponse{
-			Message:     "trading identity registered",
-			IdentityDID: req.IdentityDID,
-			BuyerDID:    ccResult.BuyerDID,
-			SellerDID:   ccResult.SellerDID,
+			Message:   "trading identity registered",
+			UserDID:   req.UserDID,
+			BuyerDID:  ccResult.BuyerDID,
+			SellerDID: ccResult.SellerDID,
 		})
 	}
 }
