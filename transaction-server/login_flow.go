@@ -29,9 +29,13 @@ type LoginRequest struct {
 
 type LoginResponse struct {
 	Success                   bool             `json:"success"`
+	IdentityDID               string           `json:"identityDID"`
 	UserDID                   string           `json:"userDID"`
+	BuyerDID                  string           `json:"buyerDID"`
+	SellerDID                 string           `json:"sellerDID"`
 	Message                   string           `json:"message"`
 	SessionToken              string           `json:"sessionToken"`
+	ExpiresAt                 string           `json:"expiresAt"`
 	SessionExpiresAt          string           `json:"sessionExpiresAt"`
 	AccountStatus             uint             `json:"accountStatus"`
 	CreditScores              CreditScores     `json:"creditScores"`
@@ -77,7 +81,18 @@ type TradeListResult struct {
 	IsActiveList        []bool `json:"isActiveList"`
 }
 
+type TradingIdentityRecord struct {
+	UserDID           string `json:"userDID"`
+	BuyerDID          string `json:"buyerDID"`
+	SellerDID         string `json:"sellerDID"`
+	AccountStatus     uint   `json:"accountStatus"`
+	BuyerCreditScore  uint   `json:"buyerCreditScore"`
+	SellerCreditScore uint   `json:"sellerCreditScore"`
+}
+
 type LoginInitializationData struct {
+	BuyerDID                  string
+	SellerDID                 string
 	AccountStatus             uint
 	CreditScores              CreditScores
 	Assets                    []AssetLoginInfo
@@ -195,9 +210,13 @@ func loginHandlerWithDependencies(resolvePublicKey publicKeyResolver, initialize
 
 		writeJSON(w, http.StatusOK, LoginResponse{
 			Success:                   true,
+			IdentityDID:               req.UserDID,
 			UserDID:                   req.UserDID,
+			BuyerDID:                  data.BuyerDID,
+			SellerDID:                 data.SellerDID,
 			Message:                   "login credential verified",
 			SessionToken:              session.Token,
+			ExpiresAt:                 session.ExpiresAt.UTC().Format(time.RFC3339),
 			SessionExpiresAt:          session.ExpiresAt.UTC().Format(time.RFC3339),
 			AccountStatus:             data.AccountStatus,
 			CreditScores:              data.CreditScores,
@@ -220,17 +239,15 @@ func emptyLoginInitialization(userDID string) (*LoginInitializationData, error) 
 }
 
 func loadLoginInitialization(fabricGateway *FabricGateway, userDID string) (*LoginInitializationData, error) {
-	accountStatus, err := evaluateUint(fabricGateway, "CheckIdentityStatus", userDID)
+	tradingIdentity, err := evaluateTradingIdentity(fabricGateway, userDID)
 	if err != nil {
-		return nil, newLoginDataError(http.StatusBadGateway, "failed to query user status", err)
+		return nil, newLoginDataError(http.StatusBadGateway, "failed to query trading identity", err)
 	}
-	if accountStatus != accountStatusAvailable {
-		return nil, newLoginDataError(http.StatusForbidden, identityStatusMessage(accountStatus), nil)
+	if tradingIdentity.UserDID != "" && tradingIdentity.UserDID != userDID {
+		return nil, newLoginDataError(http.StatusBadGateway, "trading identity does not match login DID", nil)
 	}
-
-	creditScores, err := evaluateCreditScores(fabricGateway, userDID)
-	if err != nil {
-		return nil, newLoginDataError(http.StatusBadGateway, "failed to query credit scores", err)
+	if tradingIdentity.AccountStatus != accountStatusAvailable {
+		return nil, newLoginDataError(http.StatusForbidden, identityStatusMessage(tradingIdentity.AccountStatus), nil)
 	}
 
 	assets, err := evaluateUserAssets(fabricGateway, userDID)
@@ -244,13 +261,31 @@ func loadLoginInitialization(fabricGateway *FabricGateway, userDID string) (*Log
 	}
 
 	return &LoginInitializationData{
-		AccountStatus:             accountStatus,
-		CreditScores:              creditScores,
+		BuyerDID:                  tradingIdentity.BuyerDID,
+		SellerDID:                 tradingIdentity.SellerDID,
+		AccountStatus:             tradingIdentity.AccountStatus,
+		CreditScores:              tradingIdentity.CreditScores(),
 		Assets:                    assets,
 		ActiveTrades:              activeTrades,
 		HistoricalTrades:          historicalTrades,
 		CurrentActiveTransactions: append([]TradeInfo(nil), currentActiveTransactionCache...),
 	}, nil
+}
+
+func evaluateTradingIdentity(fabricGateway *FabricGateway, userDID string) (TradingIdentityRecord, error) {
+	var record TradingIdentityRecord
+	if err := evaluateJSON(fabricGateway, &record, "GetTradingIdentity", userDID); err != nil {
+		return TradingIdentityRecord{}, err
+	}
+
+	return record, nil
+}
+
+func (r TradingIdentityRecord) CreditScores() CreditScores {
+	return CreditScores{
+		BuyerCreditScore:  r.BuyerCreditScore,
+		SellerCreditScore: r.SellerCreditScore,
+	}
 }
 
 func evaluateUint(fabricGateway *FabricGateway, fn string, args ...string) (uint, error) {

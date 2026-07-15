@@ -13,7 +13,7 @@
           <h1>Blockchain-based Property Auction System</h1>
           <p>使用者註冊、登入與財產註冊展示</p>
         </div>
-        <div class="server-pill">Local Client :8090</div>
+        <div class="server-pill">Local Client: 8090</div>
       </header>
 
       <section class="panel compact-panel">
@@ -26,6 +26,28 @@
             Current Identity DID
             <input id="identityDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
           </label>
+        </div>
+        <div class="identity-actions">
+          <button id="loadIdentityButton" type="button">Read identity.json</button>
+          <label class="identity-file-picker">
+            Select identity.json
+            <input id="identityFile" type="file" accept=".json,application/json" />
+          </label>
+          <span id="identityCacheState" class="status-tag idle">Cache not loaded</span>
+        </div>
+        <div class="result-grid identity-cache-grid">
+          <output>
+            <span>Saved Identity File</span>
+            <strong id="identityPath">-</strong>
+          </output>
+          <output>
+            <span>Cached Buyer DID</span>
+            <strong id="cachedBuyerDID">-</strong>
+          </output>
+          <output>
+            <span>Cached Seller DID</span>
+            <strong id="cachedSellerDID">-</strong>
+          </output>
         </div>
       </section>
 
@@ -108,6 +130,14 @@
           <output>
             <span>Seller Credit Score</span>
             <strong id="sellerCreditScore">-</strong>
+          </output>
+          <output>
+            <span>Verified Buyer DID</span>
+            <strong id="verifiedBuyerDID">-</strong>
+          </output>
+          <output>
+            <span>Verified Seller DID</span>
+            <strong id="verifiedSellerDID">-</strong>
           </output>
           <output>
             <span>Session Expiration</span>

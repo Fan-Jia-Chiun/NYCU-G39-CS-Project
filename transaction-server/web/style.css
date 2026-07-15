@@ -145,6 +145,38 @@ h2 {
   gap: 14px;
 }
 
+.identity-cache-grid {
+  margin-top: 14px;
+}
+
+.identity-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.identity-file-picker {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #fbfcfd;
+  color: var(--text);
+}
+
+.identity-file-picker input {
+  width: min(280px, 48vw);
+  margin-top: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
 label {
   display: block;
   color: var(--muted);

@@ -1,5 +1,7 @@
 const state = {
-  userDID: sessionStorage.getItem("demo.userDID") || localStorage.getItem("demo.userDID") || "",
+  identityDID: sessionStorage.getItem("demo.identityDID") || "",
+  buyerDID: "",
+  sellerDID: "",
   sessionToken: sessionStorage.getItem("demo.sessionToken") || "",
   clientURL: localStorage.getItem("demo.clientURL") || "http://127.0.0.1:8090",
   photoHash: "",
@@ -8,6 +10,12 @@ const state = {
 const el = {
   clientURL: document.querySelector("#clientURL"),
   identityDID: document.querySelector("#identityDID"),
+  loadIdentityButton: document.querySelector("#loadIdentityButton"),
+  identityFile: document.querySelector("#identityFile"),
+  identityCacheState: document.querySelector("#identityCacheState"),
+  identityPath: document.querySelector("#identityPath"),
+  cachedBuyerDID: document.querySelector("#cachedBuyerDID"),
+  cachedSellerDID: document.querySelector("#cachedSellerDID"),
   tabButtons: document.querySelectorAll(".tab-button"),
   tabPanels: document.querySelectorAll(".tab-panel"),
   userName: document.querySelector("#userName"),
@@ -26,6 +34,8 @@ const el = {
   accountStatus: document.querySelector("#accountStatus"),
   buyerCreditScore: document.querySelector("#buyerCreditScore"),
   sellerCreditScore: document.querySelector("#sellerCreditScore"),
+  verifiedBuyerDID: document.querySelector("#verifiedBuyerDID"),
+  verifiedSellerDID: document.querySelector("#verifiedSellerDID"),
   sessionExpiration: document.querySelector("#sessionExpiration"),
   sessionToken: document.querySelector("#sessionToken"),
   loginResult: document.querySelector("#loginResult"),
@@ -48,8 +58,9 @@ init();
 
 function init() {
   el.clientURL.value = state.clientURL;
-  el.identityDID.value = state.userDID;
+  el.identityDID.value = state.identityDID;
   el.sessionToken.value = state.sessionToken;
+  renderCachedDIDs("cache not loaded");
 
   el.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
@@ -58,16 +69,73 @@ function init() {
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.photo.addEventListener("change", updatePhotoHash);
+  el.loadIdentityButton.addEventListener("click", loadIdentityCache);
+  el.identityFile.addEventListener("change", loadSelectedIdentityFile);
   el.clientURL.addEventListener("change", () => {
     state.clientURL = normalizeClientURL(el.clientURL.value);
     el.clientURL.value = state.clientURL;
     localStorage.setItem("demo.clientURL", state.clientURL);
   });
   el.identityDID.addEventListener("change", () => {
-    state.userDID = el.identityDID.value.trim();
-    sessionStorage.setItem("demo.userDID", state.userDID);
-    localStorage.setItem("demo.userDID", state.userDID);
+    state.identityDID = el.identityDID.value.trim();
+    sessionStorage.setItem("demo.identityDID", state.identityDID);
   });
+  loadIdentityCache();
+}
+
+async function loadIdentityCache() {
+  setStatus(el.identityCacheState, "busy", "Reading default file");
+  try {
+    const response = await fetch(apiURL("/api/identity"));
+    const body = await readResponse(response);
+    if (!body.cacheFound) {
+      el.identityPath.textContent = "No saved identity file";
+      renderCachedDIDs("no local cache");
+      setStatus(el.identityCacheState, "bad", "No default file");
+      return;
+    }
+
+    applyIdentityCache(body, "local cache, not login-verified");
+    setStatus(el.identityCacheState, "ok", "Default file loaded");
+  } catch (error) {
+    renderCachedDIDs("cache unavailable");
+    setStatus(el.identityCacheState, "bad", "Read failed");
+  }
+}
+
+async function loadSelectedIdentityFile() {
+  const file = el.identityFile.files[0];
+  if (!file) {
+    return;
+  }
+
+  setStatus(el.identityCacheState, "busy", "Reading selected file");
+  try {
+    const text = await file.text();
+    const body = JSON.parse(text);
+    applyIdentityCache(body, "selected file, not login-verified");
+    el.identityPath.textContent = `Selected: ${file.name} (full path hidden by browser)`;
+    setStatus(el.identityCacheState, "ok", `Loaded ${file.name}`);
+  } catch (error) {
+    setStatus(el.identityCacheState, "bad", "Invalid identity file");
+  }
+}
+
+function applyIdentityCache(body, note) {
+  const identityDID = (body.identityDID || body.userDID || "").trim();
+  if (!identityDID) {
+    throw new Error("identityDID is required");
+  }
+
+  state.identityDID = identityDID;
+  state.buyerDID = (body.buyerDID || "").trim();
+  state.sellerDID = (body.sellerDID || "").trim();
+  sessionStorage.setItem("demo.identityDID", state.identityDID);
+  el.identityDID.value = state.identityDID;
+  if (body.identityPath) {
+    el.identityPath.textContent = body.identityPath;
+  }
+  renderCachedDIDs(note);
 }
 
 async function registerUser() {
@@ -91,15 +159,18 @@ async function registerUser() {
   el.registerButton.disabled = true;
   try {
     const response = await postJSON(apiURL("/api/register"), payload);
-    state.userDID = response.userDID || "";
-    sessionStorage.setItem("demo.userDID", state.userDID);
-    localStorage.setItem("demo.userDID", state.userDID);
+    state.identityDID = response.identityDID || response.userDID || "";
+    state.buyerDID = response.buyerDID || "";
+    state.sellerDID = response.sellerDID || "";
+    sessionStorage.setItem("demo.identityDID", state.identityDID);
 
-    el.identityDID.value = state.userDID;
-    el.registeredUserDID.textContent = response.userDID || "-";
+    el.identityDID.value = state.identityDID;
+    el.registeredUserDID.textContent = state.identityDID || "-";
     el.registeredPIMgrAddr.textContent = response.pimgrAddr || "-";
     el.registeredBuyerDID.textContent = response.buyerDID || "-";
     el.registeredSellerDID.textContent = response.sellerDID || "-";
+    el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
+    renderCachedDIDs("saved local cache, not login-verified");
     renderJSON(el.registerResult, response);
     setStatus(el.registerState, "ok", "Registered");
     activateTab("loginPanel");
@@ -124,18 +195,23 @@ async function login() {
   try {
     const response = await postJSON(apiURL("/api/login"), { identityDID });
 
-    state.userDID = response.userDID || identityDID;
+    state.identityDID = response.identityDID || response.userDID || identityDID;
+    state.buyerDID = response.buyerDID || "";
+    state.sellerDID = response.sellerDID || "";
     state.sessionToken = response.sessionToken || "";
-    sessionStorage.setItem("demo.userDID", state.userDID);
+    sessionStorage.setItem("demo.identityDID", state.identityDID);
     sessionStorage.setItem("demo.sessionToken", state.sessionToken);
-    localStorage.setItem("demo.userDID", state.userDID);
 
-    el.identityDID.value = state.userDID;
+    el.identityDID.value = state.identityDID;
     el.sessionToken.value = state.sessionToken;
     el.accountStatus.textContent = formatAccountStatus(response.accountStatus);
     el.buyerCreditScore.textContent = response.creditScores?.buyerCreditScore ?? "-";
     el.sellerCreditScore.textContent = response.creditScores?.sellerCreditScore ?? "-";
-    el.sessionExpiration.textContent = response.sessionExpiresAt || "-";
+    el.verifiedBuyerDID.textContent = response.buyerDID || "-";
+    el.verifiedSellerDID.textContent = response.sellerDID || "-";
+    el.sessionExpiration.textContent = response.expiresAt || response.sessionExpiresAt || "-";
+    el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
+    renderCachedDIDs("synced from verified login");
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
     activateTab("assetPanel");
@@ -266,6 +342,19 @@ function apiURL(path) {
 
 function normalizeClientURL(value) {
   return (value || "http://127.0.0.1:8090").trim().replace(/\/+$/, "");
+}
+
+function renderCachedDIDs(note) {
+  el.cachedBuyerDID.textContent = formatCachedDID(state.buyerDID, note);
+  el.cachedSellerDID.textContent = formatCachedDID(state.sellerDID, note);
+}
+
+function formatCachedDID(value, note) {
+  if (!value) {
+    return `- (${note})`;
+  }
+
+  return `${value} (${note})`;
 }
 
 function activateTab(panelID) {

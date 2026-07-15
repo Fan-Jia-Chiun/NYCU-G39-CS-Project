@@ -62,12 +62,14 @@ type apiRegisterRequest struct {
 }
 
 type apiRegisterResponse struct {
-	Success   bool   `json:"success"`
-	Message   string `json:"message"`
-	UserDID   string `json:"userDID"`
-	PIMgrAddr string `json:"pimgrAddr,omitempty"`
-	BuyerDID  string `json:"buyerDID,omitempty"`
-	SellerDID string `json:"sellerDID,omitempty"`
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	IdentityDID  string `json:"identityDID"`
+	UserDID      string `json:"userDID"`
+	PIMgrAddr    string `json:"pimgrAddr,omitempty"`
+	BuyerDID     string `json:"buyerDID,omitempty"`
+	SellerDID    string `json:"sellerDID,omitempty"`
+	IdentityPath string `json:"identityPath,omitempty"`
 }
 
 type apiAssetRegistrationResponse struct {
@@ -80,12 +82,14 @@ type apiAssetRegistrationResponse struct {
 	PhotoHash     string `json:"photoHash,omitempty"`
 }
 
-type localClientState struct {
-	UserDID   string `json:"userDID"`
-	PIMgrAddr string `json:"pimgrAddr,omitempty"`
-	BuyerDID  string `json:"buyerDID,omitempty"`
-	SellerDID string `json:"sellerDID,omitempty"`
-	UpdatedAt string `json:"updatedAt"`
+type apiIdentityResponse struct {
+	Success      bool   `json:"success"`
+	CacheFound   bool   `json:"cacheFound"`
+	IdentityDID  string `json:"identityDID"`
+	BuyerDID     string `json:"buyerDID,omitempty"`
+	SellerDID    string `json:"sellerDID,omitempty"`
+	IdentityPath string `json:"identityPath,omitempty"`
+	Message      string `json:"message,omitempty"`
 }
 
 func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string) error {
@@ -104,6 +108,7 @@ func runHelperServer(addr string, keyDir string, registerURL string, loginURL st
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", withCORS(server.healthHandler))
+	mux.HandleFunc("/api/identity", withCORS(server.apiIdentityHandler))
 	mux.HandleFunc("/api/register", withCORS(server.apiRegisterHandler))
 	mux.HandleFunc("/api/login", withCORS(server.apiLoginHandler))
 	mux.HandleFunc("/api/assets/register", withCORS(server.apiAssetRegistrationHandler))
@@ -126,6 +131,49 @@ func (s helperServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helperJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s helperServer) apiIdentityHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	identityPath, pathErr := defaultIdentityStoreDisplayPath()
+	if pathErr != nil {
+		log.Printf("failed to resolve local identity cache path: %v", pathErr)
+	}
+
+	cache, err := loadLocalIdentityCache()
+	if err != nil {
+		if os.IsNotExist(err) {
+			helperJSON(w, http.StatusOK, apiIdentityResponse{
+				Success:      true,
+				CacheFound:   false,
+				IdentityPath: identityPath,
+				Message:      "identity cache not found",
+			})
+			return
+		}
+		log.Printf("failed to load local identity cache: %v", err)
+		helperJSON(w, http.StatusOK, apiIdentityResponse{
+			Success:      true,
+			CacheFound:   false,
+			IdentityPath: identityPath,
+			Message:      "identity cache is unreadable",
+		})
+		return
+	}
+
+	helperJSON(w, http.StatusOK, apiIdentityResponse{
+		Success:      true,
+		CacheFound:   true,
+		IdentityDID:  cache.IdentityDID,
+		BuyerDID:     cache.BuyerDID,
+		SellerDID:    cache.SellerDID,
+		IdentityPath: identityPath,
+		Message:      "loaded local identity cache",
+	})
 }
 
 func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request) {
@@ -188,23 +236,27 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := saveLocalClientState(s.keyDir, localClientState{
-		UserDID:   authorityResp.UserDID,
-		PIMgrAddr: authorityResp.PIMgrAddr,
-		BuyerDID:  authorityResp.BuyerDID,
-		SellerDID: authorityResp.SellerDID,
-		UpdatedAt: nowUTC().UTC().Format(time.RFC3339),
+	if err := saveLocalIdentityCache(localIdentityCache{
+		IdentityDID: authorityResp.UserDID,
+		BuyerDID:    authorityResp.BuyerDID,
+		SellerDID:   authorityResp.SellerDID,
 	}); err != nil {
-		log.Printf("failed to save local client state: %v", err)
+		log.Printf("failed to save local identity cache: %v", err)
+	}
+	identityPath, err := defaultIdentityStoreDisplayPath()
+	if err != nil {
+		log.Printf("failed to resolve local identity cache path: %v", err)
 	}
 
 	helperJSON(w, http.StatusOK, apiRegisterResponse{
-		Success:   true,
-		Message:   firstNonEmpty(authorityResp.Message, "identity registered"),
-		UserDID:   authorityResp.UserDID,
-		PIMgrAddr: authorityResp.PIMgrAddr,
-		BuyerDID:  authorityResp.BuyerDID,
-		SellerDID: authorityResp.SellerDID,
+		Success:      true,
+		Message:      firstNonEmpty(authorityResp.Message, "identity registered"),
+		IdentityDID:  authorityResp.UserDID,
+		UserDID:      authorityResp.UserDID,
+		PIMgrAddr:    authorityResp.PIMgrAddr,
+		BuyerDID:     authorityResp.BuyerDID,
+		SellerDID:    authorityResp.SellerDID,
+		IdentityPath: identityPath,
 	})
 }
 
@@ -223,8 +275,8 @@ func (s helperServer) apiLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	userDID := strings.TrimSpace(firstNonEmpty(req.UserDID, req.IdentityDID))
 	if userDID == "" {
-		if state, err := loadLocalClientState(s.keyDir); err == nil {
-			userDID = state.UserDID
+		if cache, err := loadLocalIdentityCache(); err == nil {
+			userDID = cache.IdentityDID
 		}
 	}
 
@@ -247,6 +299,15 @@ func (s helperServer) apiLoginHandler(w http.ResponseWriter, r *http.Request) {
 	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
 		forwardUpstreamError(w, statusCode, body, "transaction server rejected login")
 		return
+	}
+
+	if err := saveIdentityCacheFromLoginResponse(body, userDID); err != nil {
+		log.Printf("failed to sync local identity cache after login: %v", err)
+	}
+	if identityPath, err := defaultIdentityStoreDisplayPath(); err == nil {
+		body = addJSONField(body, "identityPath", identityPath)
+	} else {
+		log.Printf("failed to resolve local identity cache path: %v", err)
 	}
 
 	writeRawJSON(w, http.StatusOK, body)
@@ -493,37 +554,6 @@ func postMultipartToServer(url string, payload AssetRegistrationPayload) ([]byte
 	return respBody, resp.StatusCode, nil
 }
 
-func saveLocalClientState(keyDir string, state localClientState) error {
-	if err := os.MkdirAll(keyDir, 0700); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(localClientStatePath(keyDir), data, 0600)
-}
-
-func loadLocalClientState(keyDir string) (localClientState, error) {
-	data, err := os.ReadFile(localClientStatePath(keyDir))
-	if err != nil {
-		return localClientState{}, err
-	}
-
-	var state localClientState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return localClientState{}, err
-	}
-
-	return state, nil
-}
-
-func localClientStatePath(keyDir string) string {
-	return filepath.Join(strings.TrimSpace(keyDir), "client_state.json")
-}
-
 func localClientWebDir() string {
 	candidates := []string{
 		os.Getenv("CLIENT_WEB_DIR"),
@@ -542,6 +572,29 @@ func localClientWebDir() string {
 	}
 
 	return filepath.Join("..", "transaction-server", "web")
+}
+
+func saveIdentityCacheFromLoginResponse(body []byte, fallbackIdentityDID string) error {
+	var resp struct {
+		IdentityDID string `json:"identityDID"`
+		UserDID     string `json:"userDID"`
+		BuyerDID    string `json:"buyerDID"`
+		SellerDID   string `json:"sellerDID"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return err
+	}
+
+	identityDID := strings.TrimSpace(firstNonEmpty(resp.IdentityDID, resp.UserDID, fallbackIdentityDID))
+	if identityDID == "" {
+		return fmt.Errorf("login response did not include identityDID")
+	}
+
+	return saveLocalIdentityCache(localIdentityCache{
+		IdentityDID: identityDID,
+		BuyerDID:    resp.BuyerDID,
+		SellerDID:   resp.SellerDID,
+	})
 }
 
 func firstFormValue(form *multipart.Form, name string) string {
@@ -580,6 +633,21 @@ func writeRawJSON(w http.ResponseWriter, statusCode int, body []byte) {
 	if _, err := w.Write(body); err != nil {
 		log.Printf("failed to write helper response: %v", err)
 	}
+}
+
+func addJSONField(body []byte, name string, value string) []byte {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+
+	payload[name] = value
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+
+	return updated
 }
 
 func helperError(w http.ResponseWriter, statusCode int, message string) {
