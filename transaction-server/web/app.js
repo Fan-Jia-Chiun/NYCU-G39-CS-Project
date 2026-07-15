@@ -69,8 +69,8 @@ function init() {
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.photo.addEventListener("change", updatePhotoHash);
-  el.loadIdentityButton.addEventListener("click", loadIdentityCache);
-  el.identityFile.addEventListener("change", loadSelectedIdentityFile);
+  el.loadIdentityButton.addEventListener("click", readIdentity);
+  el.identityFile.addEventListener("change", markSelectedIdentityFile);
   el.clientURL.addEventListener("change", () => {
     state.clientURL = normalizeClientURL(el.clientURL.value);
     el.clientURL.value = state.clientURL;
@@ -80,27 +80,46 @@ function init() {
     state.identityDID = el.identityDID.value.trim();
     sessionStorage.setItem("demo.identityDID", state.identityDID);
   });
-  loadIdentityCache();
+}
+
+async function readIdentity() {
+  if (el.identityFile.files[0]) {
+    await loadSelectedIdentityFile();
+    return;
+  }
+
+  await loadIdentityCache();
 }
 
 async function loadIdentityCache() {
-  setStatus(el.identityCacheState, "busy", "Reading default file");
+  setStatus(el.identityCacheState, "busy", "Reading identity.json");
   try {
     const response = await fetch(apiURL("/api/identity"));
     const body = await readResponse(response);
     if (!body.cacheFound) {
       el.identityPath.textContent = "No saved identity file";
       renderCachedDIDs("no local cache");
-      setStatus(el.identityCacheState, "bad", "No default file");
+      setStatus(el.identityCacheState, "bad", "No identity.json");
       return;
     }
 
     applyIdentityCache(body, "local cache, not login-verified");
-    setStatus(el.identityCacheState, "ok", "Default file loaded");
+    setStatus(el.identityCacheState, "ok", "identity.json loaded");
   } catch (error) {
     renderCachedDIDs("cache unavailable");
     setStatus(el.identityCacheState, "bad", "Read failed");
   }
+}
+
+function markSelectedIdentityFile() {
+  const file = el.identityFile.files[0];
+  if (!file) {
+    setStatus(el.identityCacheState, "idle", "Cache not loaded");
+    return;
+  }
+
+  renderValueWithNote(el.identityPath, `Selected: ${file.name}`, "not loaded yet");
+  setStatus(el.identityCacheState, "busy", "File selected; press Read");
 }
 
 async function loadSelectedIdentityFile() {
@@ -114,7 +133,7 @@ async function loadSelectedIdentityFile() {
     const text = await file.text();
     const body = JSON.parse(text);
     applyIdentityCache(body, "selected file, not login-verified");
-    el.identityPath.textContent = `Selected: ${file.name} (full path hidden by browser)`;
+    renderValueWithNote(el.identityPath, `Selected: ${file.name}`, "full path hidden by browser");
     setStatus(el.identityCacheState, "ok", `Loaded ${file.name}`);
   } catch (error) {
     setStatus(el.identityCacheState, "bad", "Invalid identity file");
@@ -204,17 +223,16 @@ async function login() {
 
     el.identityDID.value = state.identityDID;
     el.sessionToken.value = state.sessionToken;
-    el.accountStatus.textContent = formatAccountStatus(response.accountStatus);
+    renderAccountStatus(response.accountStatus);
     el.buyerCreditScore.textContent = response.creditScores?.buyerCreditScore ?? "-";
     el.sellerCreditScore.textContent = response.creditScores?.sellerCreditScore ?? "-";
     el.verifiedBuyerDID.textContent = response.buyerDID || "-";
     el.verifiedSellerDID.textContent = response.sellerDID || "-";
-    el.sessionExpiration.textContent = response.expiresAt || response.sessionExpiresAt || "-";
+    renderValueWithNote(el.sessionExpiration, formatTaipeiDateTime(response.expiresAt || response.sessionExpiresAt), "UTC+8");
     el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
     renderCachedDIDs("synced from verified login");
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
-    activateTab("assetPanel");
   } catch (error) {
     renderJSON(el.loginResult, errorPayload(error));
     setStatus(el.loginState, "bad", "Login failed");
@@ -345,16 +363,44 @@ function normalizeClientURL(value) {
 }
 
 function renderCachedDIDs(note) {
-  el.cachedBuyerDID.textContent = formatCachedDID(state.buyerDID, note);
-  el.cachedSellerDID.textContent = formatCachedDID(state.sellerDID, note);
+  renderValueWithNote(el.cachedBuyerDID, state.buyerDID || "-", note);
+  renderValueWithNote(el.cachedSellerDID, state.sellerDID || "-", note);
 }
 
-function formatCachedDID(value, note) {
+function renderValueWithNote(node, value, note) {
+  node.textContent = "";
+
+  const valueNode = document.createElement("span");
+  valueNode.className = "value-main";
+  valueNode.textContent = value || "-";
+
+  const noteNode = document.createElement("span");
+  noteNode.className = "value-note";
+  noteNode.textContent = note ? `(${note})` : "";
+
+  node.append(valueNode, noteNode);
+}
+
+function formatTaipeiDateTime(value) {
   if (!value) {
-    return `- (${note})`;
+    return "-";
   }
 
-  return `${value} (${note})`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function activateTab(panelID) {
@@ -384,9 +430,19 @@ function errorPayload(error) {
   };
 }
 
-function formatAccountStatus(status) {
-  if (status === 0) return "0 Available";
-  if (status === 1) return "1 Disabled";
-  if (status === 2) return "2 Deregistered";
-  return status ?? "-";
+function renderAccountStatus(status) {
+  if (status === 0) {
+    renderValueWithNote(el.accountStatus, "Available - account can use transaction services", "code 0");
+    return;
+  }
+  if (status === 1) {
+    renderValueWithNote(el.accountStatus, "Disabled - account cannot use transaction services", "code 1");
+    return;
+  }
+  if (status === 2) {
+    renderValueWithNote(el.accountStatus, "Deregistered - account has been removed", "code 2");
+    return;
+  }
+
+  renderValueWithNote(el.accountStatus, status ?? "-", "");
 }

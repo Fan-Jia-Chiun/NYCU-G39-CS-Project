@@ -255,6 +255,25 @@ output strong,
   overflow-wrap: anywhere;
 }
 
+.value-main,
+.value-note {
+  display: block;
+}
+
+.value-main {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.value-note {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .file-row {
   display: grid;
   grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
