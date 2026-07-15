@@ -4,6 +4,7 @@ const (
 	objectTypeTradingIdentity = "tradingIdentity"
 	objectTypeUserAssetList   = "userAssetList"
 	objectTypeAssetCert       = "assetCertificate"
+	objectTypePropertyIndex   = "propertyIndex"
 	objectTypeTradeInfo       = "tradeInfo"
 	objectTypeUserTradeList   = "userTransactionList"
 
@@ -15,6 +16,7 @@ const (
 	accountStatusAvailable   uint = 0
 	defaultBuyerCreditScore  uint = 80
 	defaultSellerCreditScore uint = 80
+	legalStatusNormal        int  = 0
 	tradeStatusCompleted     uint = 5
 	tradeStatusCancelled     uint = 6
 	tradeStatusReturned      uint = 9
@@ -56,6 +58,15 @@ type AssetCertificate struct {
 	AssetID       string `json:"assetID"`
 	AssetInfoAddr string `json:"assetInfoAddr,omitempty"`
 	LegalStatus   int    `json:"legalStatus"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+type PropertyIndex struct {
+	ObjectType string   `json:"objectType"`
+	AssetID    string   `json:"assetID"`
+	OwnerDID   string   `json:"ownerDID"`
+	ChangeLog  []string `json:"changeLog"`
 }
 
 type TradeInfo struct {

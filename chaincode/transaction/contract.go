@@ -213,6 +213,84 @@ func (c *TransactionIdentityRegistryContract) GetAssetList(ctx contractapi.Trans
 	return list.AssetAddrs, nil
 }
 
+// RegisterAsset creates an asset certificate and indexes it under the owner DID.
+// Input: AssetInfoAddr, userDID. Output: assetID.
+func (c *TransactionIdentityRegistryContract) RegisterAsset(ctx contractapi.TransactionContextInterface, assetData string, userDID string) (string, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return "", err
+	}
+	if err := validateRequired("assetData", assetData); err != nil {
+		return "", err
+	}
+	if err := validateRequired("userDID", userDID); err != nil {
+		return "", err
+	}
+
+	assetData = strings.TrimSpace(assetData)
+	userDID = strings.TrimSpace(userDID)
+	if _, err := getTradingIdentity(ctx, userDID); err != nil {
+		return "", err
+	}
+
+	txID := ctx.GetStub().GetTxID()
+	if txID == "" {
+		return "", fmt.Errorf("transaction ID is required to register asset")
+	}
+	assetID := deriveAssetID(txID)
+	assetAddr := assetCertificateKey(assetID)
+
+	existing, err := ctx.GetStub().GetState(assetAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to check asset certificate state: %w", err)
+	}
+	if existing != nil {
+		return "", fmt.Errorf("asset already exists: %s", assetID)
+	}
+
+	now, err := txTimestamp(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	cert := AssetCertificate{
+		ObjectType:    objectTypeAssetCert,
+		AssetID:       assetID,
+		AssetInfoAddr: assetData,
+		LegalStatus:   legalStatusNormal,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := putAssetCertificate(ctx, assetAddr, &cert); err != nil {
+		return "", err
+	}
+	if err := putIndex(ctx, assetCertAddrKey(assetID), assetAddr); err != nil {
+		return "", err
+	}
+
+	property := PropertyIndex{
+		ObjectType: objectTypePropertyIndex,
+		AssetID:    assetID,
+		OwnerDID:   userDID,
+		ChangeLog:  []string{"REGISTER|" + now + "|" + userDID},
+	}
+	if err := putPropertyIndex(ctx, &property); err != nil {
+		return "", err
+	}
+
+	assetList, err := getUserAssetList(ctx, userDID)
+	if err != nil {
+		return "", err
+	}
+	if !containsString(assetList.AssetAddrs, assetAddr) {
+		assetList.AssetAddrs = append(assetList.AssetAddrs, assetAddr)
+	}
+	if err := putUserAssetList(ctx, assetList); err != nil {
+		return "", err
+	}
+
+	return assetID, nil
+}
+
 // GetCertAddr returns the asset certificate address for an asset ID.
 // Input: assetID. Output: asset certificate address, or an empty string when missing.
 func (c *TransactionIdentityRegistryContract) GetCertAddr(ctx contractapi.TransactionContextInterface, assetID string) (string, error) {
@@ -340,9 +418,19 @@ func userAssetListKey(userDID string) string {
 	return "USER_ASSET_LIST:" + userDID
 }
 
+// assetCertificateKey builds the ledger key for an asset certificate.
+func assetCertificateKey(assetID string) string {
+	return "ASSET_CERT:" + assetID
+}
+
 // assetCertAddrKey builds the asset ID to asset certificate address index key.
 func assetCertAddrKey(assetID string) string {
 	return "ASSET_CERT_ADDR:" + assetID
+}
+
+// propertyIndexKey builds the ledger key for a property index record.
+func propertyIndexKey(assetID string) string {
+	return "PROPERTY_INDEX:" + assetID
 }
 
 // tradeInfoKey builds the ledger key for a trade info record.
@@ -361,6 +449,14 @@ func deriveTradingDID(userDID string, role string) string {
 	hash := sha256.Sum256([]byte(seed))
 
 	return "did:nycu-g39:" + role + ":" + hex.EncodeToString(hash[:])
+}
+
+// deriveAssetID deterministically derives a unique asset ID from a Fabric txID.
+func deriveAssetID(txID string) string {
+	seed := "nycu-g39:asset:v1:" + txID
+	hash := sha256.Sum256([]byte(seed))
+
+	return "asset:" + hex.EncodeToString(hash[:])
 }
 
 // tradingIdentityExists checks whether an user DID already has a mapping.
@@ -463,6 +559,34 @@ func getAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr 
 	return &cert, nil
 }
 
+// putAssetCertificate writes an asset certificate to world state.
+func putAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr string, cert *AssetCertificate) error {
+	data, err := json.Marshal(cert)
+	if err != nil {
+		return fmt.Errorf("failed to encode asset certificate: %w", err)
+	}
+
+	if err := ctx.GetStub().PutState(assetAddr, data); err != nil {
+		return fmt.Errorf("failed to write asset certificate: %w", err)
+	}
+
+	return nil
+}
+
+// putPropertyIndex writes a property index record to world state.
+func putPropertyIndex(ctx contractapi.TransactionContextInterface, property *PropertyIndex) error {
+	data, err := json.Marshal(property)
+	if err != nil {
+		return fmt.Errorf("failed to encode property index: %w", err)
+	}
+
+	if err := ctx.GetStub().PutState(propertyIndexKey(property.AssetID), data); err != nil {
+		return fmt.Errorf("failed to write property index: %w", err)
+	}
+
+	return nil
+}
+
 // getTradeInfo reads a trade info record by trade ID.
 func getTradeInfo(ctx contractapi.TransactionContextInterface, tradeID uint) (*TradeInfo, error) {
 	data, err := ctx.GetStub().GetState(tradeInfoKey(tradeID))
@@ -541,6 +665,20 @@ func putUserTransactionList(ctx contractapi.TransactionContextInterface, list *U
 	return nil
 }
 
+// putUserAssetList writes a user's asset list to world state.
+func putUserAssetList(ctx contractapi.TransactionContextInterface, list *UserAssetList) error {
+	data, err := json.Marshal(list)
+	if err != nil {
+		return fmt.Errorf("failed to encode user asset list: %w", err)
+	}
+
+	if err := ctx.GetStub().PutState(userAssetListKey(list.UserDID), data); err != nil {
+		return fmt.Errorf("failed to write user asset list: %w", err)
+	}
+
+	return nil
+}
+
 // putIndex writes a reverse DID index entry to world state.
 func putIndex(ctx contractapi.TransactionContextInterface, key string, userDID string) error {
 	if err := ctx.GetStub().PutState(key, []byte(userDID)); err != nil {
@@ -561,6 +699,17 @@ func getIndex(ctx contractapi.TransactionContextInterface, key string) (string, 
 	}
 
 	return string(data), nil
+}
+
+// containsString reports whether target already appears in values.
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+
+	return false
 }
 
 // requireAnyRole allows the call only when the client has one accepted role.

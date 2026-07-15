@@ -33,16 +33,21 @@ func main() {
 	log.Printf("Connected to channel: %s", fabricGateway.ChannelName)
 	log.Printf("Loaded contract: %s", fabricGateway.ChaincodeName)
 
+	ipfsEndpoint := envOrDefault("IPFS_API_ENDPOINT", defaultIPFSEndpoint)
+	ipfs := newIPFSClient(ipfsEndpoint)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", runningHandler)
 	mux.HandleFunc("/transaction", transactionHandler)
 	mux.HandleFunc("/trading-identities", registerTradingIdentityHandler(fabricGateway))
 	mux.HandleFunc("/login", loginHandler(fabricGateway))
+	mux.HandleFunc("/assets", assetRegistrationHandler(fabricGateway, ipfs))
 
 	port := "8082"
 	addr := ":" + port
 	log.Printf("Transaction Server PID: %d", os.Getpid())
 	log.Printf("Transaction Server IP: %s", localIPSummary())
+	log.Printf("IPFS API endpoint: %s", ipfsEndpoint)
 	log.Printf("Transaction Server listening on: %s", port)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("transaction server failed: %v", err)
