@@ -1,17 +1,19 @@
 const state = {
-  identityDID: sessionStorage.getItem("demo.identityDID") || "",
+  userDID: sessionStorage.getItem("demo.userDID") || "",
   buyerDID: "",
   sellerDID: "",
   sessionToken: sessionStorage.getItem("demo.sessionToken") || "",
   clientURL: localStorage.getItem("demo.clientURL") || "http://127.0.0.1:8090",
+  uiMode: localStorage.getItem("demo.uiMode") || "developer",
   photoHash: "",
+  lastLoginResponse: {},
 };
 
 const el = {
+  userModeButton: document.querySelector("#userModeButton"),
+  developerModeButton: document.querySelector("#developerModeButton"),
   clientURL: document.querySelector("#clientURL"),
-  identityDID: document.querySelector("#identityDID"),
-  loadIdentityButton: document.querySelector("#loadIdentityButton"),
-  saveIdentityButton: document.querySelector("#saveIdentityButton"),
+  userDID: document.querySelector("#userDID"),
   saveIdentityFolderButton: document.querySelector("#saveIdentityFolderButton"),
   identityFile: document.querySelector("#identityFile"),
   identityCacheState: document.querySelector("#identityCacheState"),
@@ -36,6 +38,8 @@ const el = {
   accountStatus: document.querySelector("#accountStatus"),
   buyerCreditScore: document.querySelector("#buyerCreditScore"),
   sellerCreditScore: document.querySelector("#sellerCreditScore"),
+  loginUserDID: document.querySelector("#loginUserDID"),
+  copyUserDIDButton: document.querySelector("#copyUserDIDButton"),
   verifiedBuyerDID: document.querySelector("#verifiedBuyerDID"),
   verifiedSellerDID: document.querySelector("#verifiedSellerDID"),
   sessionExpiration: document.querySelector("#sessionExpiration"),
@@ -68,11 +72,15 @@ init();
 
 function init() {
   el.clientURL.value = state.clientURL;
-  el.identityDID.value = state.identityDID;
+  el.userDID.value = state.userDID;
   el.sessionToken.value = state.sessionToken;
   renderCachedDIDs("cache not loaded");
   renderLoginInitialization({});
+  applyUIMode(state.uiMode);
 
+  el.userModeButton.addEventListener("click", () => setUIMode("user"));
+  el.developerModeButton.addEventListener("click", () => setUIMode("developer"));
+  el.copyUserDIDButton.addEventListener("click", copyLoginUserDID);
   el.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
   });
@@ -80,64 +88,23 @@ function init() {
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.photo.addEventListener("change", updatePhotoHash);
-  el.loadIdentityButton.addEventListener("click", readIdentity);
-  el.saveIdentityButton.addEventListener("click", saveIdentity);
   el.saveIdentityFolderButton.addEventListener("click", saveIdentityToFolder);
-  el.identityFile.addEventListener("change", markSelectedIdentityFile);
+  el.identityFile.addEventListener("change", loadSelectedIdentityFile);
   el.clientURL.addEventListener("change", () => {
     state.clientURL = normalizeClientURL(el.clientURL.value);
     el.clientURL.value = state.clientURL;
     localStorage.setItem("demo.clientURL", state.clientURL);
   });
-  el.identityDID.addEventListener("change", () => {
-    state.identityDID = el.identityDID.value.trim();
-    sessionStorage.setItem("demo.identityDID", state.identityDID);
+  el.userDID.addEventListener("change", () => {
+    state.userDID = el.userDID.value.trim();
+    sessionStorage.setItem("demo.userDID", state.userDID);
   });
-}
-
-async function readIdentity() {
-  if (el.identityFile.files[0]) {
-    await loadSelectedIdentityFile();
-    return;
-  }
-
-  await loadIdentityCache();
-}
-
-async function loadIdentityCache() {
-  setStatus(el.identityCacheState, "busy", "Reading identity.json");
-  try {
-    const response = await fetch(apiURL("/api/identity"));
-    const body = await readResponse(response);
-    if (!body.cacheFound) {
-      el.identityPath.textContent = "No saved identity file";
-      renderCachedDIDs("no local cache");
-      setStatus(el.identityCacheState, "bad", "No identity.json");
-      return;
-    }
-
-    applyIdentityCache(body, "local cache, not login-verified");
-    setStatus(el.identityCacheState, "ok", "identity.json loaded");
-  } catch (error) {
-    renderCachedDIDs("cache unavailable");
-    setStatus(el.identityCacheState, "bad", "Read failed");
-  }
-}
-
-function markSelectedIdentityFile() {
-  const file = el.identityFile.files[0];
-  if (!file) {
-    setStatus(el.identityCacheState, "idle", "Cache not loaded");
-    return;
-  }
-
-  renderValueWithNote(el.identityPath, `Selected: ${file.name}`, "not loaded yet");
-  setStatus(el.identityCacheState, "busy", "File selected; press Read");
 }
 
 async function loadSelectedIdentityFile() {
   const file = el.identityFile.files[0];
   if (!file) {
+    setStatus(el.identityCacheState, "idle", "Cache not loaded");
     return;
   }
 
@@ -154,16 +121,16 @@ async function loadSelectedIdentityFile() {
 }
 
 function applyIdentityCache(body, note) {
-  const identityDID = (body.identityDID || body.userDID || "").trim();
-  if (!identityDID) {
-    throw new Error("identityDID is required");
+  const userDID = (body.userDID || "").trim();
+  if (!userDID) {
+    throw new Error("userDID is required");
   }
 
-  state.identityDID = identityDID;
+  state.userDID = userDID;
   state.buyerDID = (body.buyerDID || "").trim();
   state.sellerDID = (body.sellerDID || "").trim();
-  sessionStorage.setItem("demo.identityDID", state.identityDID);
-  el.identityDID.value = state.identityDID;
+  sessionStorage.setItem("demo.userDID", state.userDID);
+  el.userDID.value = state.userDID;
   if (body.identityPath) {
     el.identityPath.textContent = body.identityPath;
   }
@@ -191,13 +158,13 @@ async function registerUser() {
   el.registerButton.disabled = true;
   try {
     const response = await postJSON(apiURL("/api/register"), payload);
-    state.identityDID = response.identityDID || response.userDID || "";
+    state.userDID = response.userDID || "";
     state.buyerDID = response.buyerDID || "";
     state.sellerDID = response.sellerDID || "";
-    sessionStorage.setItem("demo.identityDID", state.identityDID);
+    sessionStorage.setItem("demo.userDID", state.userDID);
 
-    el.identityDID.value = state.identityDID;
-    el.registeredUserDID.textContent = state.identityDID || "-";
+    el.userDID.value = state.userDID;
+    el.registeredUserDID.textContent = state.userDID || "-";
     el.registeredPIMgrAddr.textContent = response.pimgrAddr || "-";
     el.registeredBuyerDID.textContent = response.buyerDID || "-";
     el.registeredSellerDID.textContent = response.sellerDID || "-";
@@ -215,28 +182,29 @@ async function registerUser() {
 }
 
 async function login() {
-  const identityDID = el.identityDID.value.trim();
-  if (!identityDID) {
+  const userDID = el.userDID.value.trim();
+  if (!userDID) {
     setStatus(el.loginState, "bad", "Missing DID");
-    renderJSON(el.loginResult, { success: false, message: "Identity DID is required" });
+    renderJSON(el.loginResult, { success: false, message: "User DID is required" });
     return;
   }
 
   setStatus(el.loginState, "busy", "Logging in");
   el.loginButton.disabled = true;
   try {
-    const response = await postJSON(apiURL("/api/login"), { identityDID });
+    const response = await postJSON(apiURL("/api/login"), { userDID });
 
-    state.identityDID = response.identityDID || response.userDID || identityDID;
+    state.userDID = response.userDID || userDID;
     state.buyerDID = response.buyerDID || "";
     state.sellerDID = response.sellerDID || "";
     state.sessionToken = response.sessionToken || "";
-    sessionStorage.setItem("demo.identityDID", state.identityDID);
+    sessionStorage.setItem("demo.userDID", state.userDID);
     sessionStorage.setItem("demo.sessionToken", state.sessionToken);
 
-    el.identityDID.value = state.identityDID;
+    el.userDID.value = state.userDID;
     el.sessionToken.value = state.sessionToken;
     renderAccountStatus(response.accountStatus);
+    renderLoginUserDID(state.userDID);
     el.buyerCreditScore.textContent = response.creditScores?.buyerCreditScore ?? "-";
     el.sellerCreditScore.textContent = response.creditScores?.sellerCreditScore ?? "-";
     el.verifiedBuyerDID.textContent = response.buyerDID || "-";
@@ -244,6 +212,7 @@ async function login() {
     renderValueWithNote(el.sessionExpiration, formatTaipeiDateTime(response.expiresAt || response.sessionExpiresAt), "UTC+8");
     el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
     renderCachedDIDs("synced from verified login, ready to save");
+    state.lastLoginResponse = response;
     renderLoginInitialization(response);
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
@@ -255,29 +224,49 @@ async function login() {
   }
 }
 
-async function saveIdentity() {
-  const payload = currentIdentityPayload();
-  if (!payload.identityDID) {
-    setStatus(el.identityCacheState, "bad", "Missing DID");
+function setUIMode(mode) {
+  state.uiMode = mode === "user" ? "user" : "developer";
+  localStorage.setItem("demo.uiMode", state.uiMode);
+  applyUIMode(state.uiMode);
+  if (Object.hasOwn(state.lastLoginResponse, "accountStatus")) {
+    renderAccountStatus(state.lastLoginResponse.accountStatus);
+  }
+  renderLoginInitialization(state.lastLoginResponse);
+}
+
+function applyUIMode(mode) {
+  document.body.dataset.mode = mode === "user" ? "user" : "developer";
+  el.userModeButton.classList.toggle("active", mode === "user");
+  el.developerModeButton.classList.toggle("active", mode !== "user");
+}
+
+function isDeveloperMode() {
+  return state.uiMode !== "user";
+}
+
+async function copyLoginUserDID() {
+  const userDID = state.userDID || el.userDID.value.trim();
+  if (!userDID) {
     return;
   }
 
-  setStatus(el.identityCacheState, "busy", "Saving identity.json");
   try {
-    const response = await postJSON(apiURL("/api/identity"), payload);
-    applyIdentityCache(response, "saved to identity.json");
-    if (response.identityPath) {
-      el.identityPath.textContent = response.identityPath;
-    }
-    setStatus(el.identityCacheState, "ok", "identity.json saved");
-  } catch (error) {
-    setStatus(el.identityCacheState, "bad", "Save failed");
+    await navigator.clipboard.writeText(userDID);
+    el.copyUserDIDButton.textContent = "Copied";
+    setTimeout(() => {
+      el.copyUserDIDButton.textContent = "Copy";
+    }, 1200);
+  } catch {
+    el.copyUserDIDButton.textContent = "Copy failed";
+    setTimeout(() => {
+      el.copyUserDIDButton.textContent = "Copy";
+    }, 1200);
   }
 }
 
 async function saveIdentityToFolder() {
   const payload = currentIdentityPayload();
-  if (!payload.identityDID) {
+  if (!payload.userDID) {
     setStatus(el.identityCacheState, "bad", "Missing DID");
     return;
   }
@@ -307,11 +296,11 @@ async function saveIdentityToFolder() {
 }
 
 function currentIdentityPayload() {
-  state.identityDID = el.identityDID.value.trim() || state.identityDID;
-  sessionStorage.setItem("demo.identityDID", state.identityDID);
+  state.userDID = el.userDID.value.trim() || state.userDID;
+  sessionStorage.setItem("demo.userDID", state.userDID);
 
   return {
-    identityDID: state.identityDID,
+    userDID: state.userDID,
     buyerDID: state.buyerDID || "",
     sellerDID: state.sellerDID || "",
   };
@@ -334,18 +323,18 @@ async function updatePhotoHash() {
 }
 
 async function registerAsset() {
-  const identityDID = el.identityDID.value.trim();
+  const userDID = el.userDID.value.trim();
   const sessionToken = el.sessionToken.value.trim();
   const assetName = el.assetName.value.trim();
   const assetLocation = el.assetLocation.value.trim();
   const description = el.description.value.trim();
   const file = el.photo.files[0];
 
-  if (!sessionToken || !identityDID || !assetName || !assetLocation || !file) {
+  if (!sessionToken || !userDID || !assetName || !assetLocation || !file) {
     setStatus(el.assetState, "bad", "Missing fields");
     renderJSON(el.assetResult, {
       success: false,
-      message: "sessionToken, identityDID, assetName, assetLocation, and photo are required",
+      message: "sessionToken, userDID, assetName, assetLocation, and photo are required",
     });
     return;
   }
@@ -362,7 +351,7 @@ async function registerAsset() {
 
     const form = new FormData();
     form.append("sessionToken", sessionToken);
-    form.append("identityDID", identityDID);
+    form.append("userDID", userDID);
     form.append("assetName", assetName);
     form.append("assetLocation", assetLocation);
     form.append("description", description);
@@ -508,94 +497,156 @@ function errorPayload(error) {
 
 function renderAccountStatus(status) {
   if (status === 0) {
-    renderValueWithNote(el.accountStatus, "Available - account can use transaction services", "code 0");
+    renderValueWithNote(
+      el.accountStatus,
+      "Available - account can use transaction services",
+      isDeveloperMode() ? "code 0" : "",
+    );
     return;
   }
   if (status === 1) {
-    renderValueWithNote(el.accountStatus, "Disabled - account cannot use transaction services", "code 1");
+    renderValueWithNote(
+      el.accountStatus,
+      "Disabled - account cannot use transaction services",
+      isDeveloperMode() ? "code 1" : "",
+    );
     return;
   }
   if (status === 2) {
-    renderValueWithNote(el.accountStatus, "Deregistered - account has been removed", "code 2");
+    renderValueWithNote(
+      el.accountStatus,
+      "Deregistered - account has been removed",
+      isDeveloperMode() ? "code 2" : "",
+    );
     return;
   }
 
   renderValueWithNote(el.accountStatus, status ?? "-", "");
 }
 
+function renderLoginUserDID(userDID) {
+  if (!userDID) {
+    el.loginUserDID.textContent = "-";
+    el.loginUserDID.title = "";
+    return;
+  }
+
+  el.loginUserDID.textContent = isDeveloperMode() ? userDID : shortenDID(userDID);
+  el.loginUserDID.title = userDID;
+}
+
+function shortenDID(value) {
+  if (!value || value.length <= 28) {
+    return value || "-";
+  }
+
+  return `${value.slice(0, 18)}...${value.slice(-10)}`;
+}
+
 function renderLoginInitialization(response) {
-  renderAssets(response.assets || []);
+  const assets = response.assets || [];
+  const assetNameMap = buildAssetNameMap(assets);
+  renderLoginUserDID(state.userDID);
+  renderAssets(assets);
   renderTradeInfoList(
     el.currentTransactionList,
     el.currentTransactionCount,
     response.currentActiveTransactions || [],
+    assetNameMap,
     "No available active transactions",
   );
   renderUserTrades(
     el.activeTradeList,
     el.activeTradeCount,
     response.activeTrades || [],
+    assetNameMap,
     "No active trades",
   );
   renderUserTrades(
     el.historicalTradeList,
     el.historicalTradeCount,
     response.historicalTrades || [],
+    assetNameMap,
     "No historical trades",
   );
 }
 
 function renderAssets(assets) {
+  const columns = [
+    ["Asset Name", (asset) => assetInfoValue(asset, "assetName")],
+    ["Legal Status", (asset) => legalStatusLabel(asset.legalStatus)],
+    ["View", (asset) => assetPhotoLinkNode(asset)],
+    ["Asset Location", (asset) => assetInfoValue(asset, "assetLocation")],
+    ["Registration Time (UTC+8)", (asset) => assetRegistrationTimeLabel(assetInfoValue(asset, "registrationTime"))],
+    ["Description", (asset) => assetInfoValue(asset, "description")],
+  ];
+  if (isDeveloperMode()) {
+    columns.push(
+      ["Asset ID", (asset) => asset.assetID || asset.assetAddr || "-"],
+      ["Asset Certificate Address", (asset) => asset.assetAddr || "-"],
+      ["AssetInfoAddr", (asset) => asset.assetInfoAddr || "-"],
+      ["IPFS CID", (asset) => asset.photoCID || normalizeIPFSCID(assetInfoValue(asset, "photoUrl")) || "-"],
+      ["Photo URL", (asset) => photoLinkURL(asset) || assetInfoValue(asset, "photoUrl") || "-"],
+    );
+  }
+
   renderTable(
     el.assetList,
     el.assetListCount,
     assets,
-    [
-      ["Asset Name", (asset) => assetInfoValue(asset, "assetName")],
-      ["Asset ID", (asset) => asset.assetID || asset.assetAddr || "-"],
-      ["Legal Status", (asset) => legalStatusLabel(asset.legalStatus)],
-      ["Photo Link", (asset) => assetPhotoLinkNode(asset)],
-      ["Asset Location", (asset) => assetInfoValue(asset, "assetLocation")],
-      ["Registration Time", (asset) => assetRegistrationTimeLabel(assetInfoValue(asset, "registrationTime"))],
-      ["Photo URL", (asset) => assetInfoValue(asset, "photoUrl")],
-      ["Description", (asset) => assetInfoValue(asset, "description")],
-      ["Asset Certificate Addr", (asset) => asset.assetAddr || "-"],
-      ["AssetInfoAddr / CID", (asset) => asset.assetInfoAddr || "-"],
-    ],
+    columns,
     "No assets",
   );
 }
 
-function renderTradeInfoList(container, countNode, trades, emptyText) {
+function renderTradeInfoList(container, countNode, trades, assetNameMap, emptyText) {
+  const columns = [
+    ["Property Name", (trade) => propertyNameForTrade(trade, assetNameMap)],
+    ["Trade Mode", (trade) => transactionModeLabel(trade.transactionMode)],
+    ["Current Price", (trade) => displayValue(trade.currentHighestPrice)],
+    ["End Time", (trade) => trade.endTime || trade.endTimeText || "-"],
+    ["Action", () => actionNode("View")],
+  ];
+  if (isDeveloperMode()) {
+    columns.push(
+      ["Trade ID", (trade) => displayValue(trade.tradeID)],
+      ["Asset ID", (trade) => trade.assetID || "-"],
+      ["Transaction Status", (trade) => transactionStatusLabel(trade.transactionStatus)],
+      ["Transaction Mode", (trade) => transactionModeLabel(trade.transactionMode)],
+    );
+  }
+
   renderTable(
     container,
     countNode,
     trades,
-    [
-      ["Trade ID", (trade) => displayValue(trade.tradeID)],
-      ["Asset ID", (trade) => trade.assetID || "-"],
-      ["Status", (trade) => transactionStatusLabel(trade.transactionStatus)],
-      ["Mode", (trade) => transactionModeLabel(trade.transactionMode)],
-      ["Current Highest Price", (trade) => displayValue(trade.currentHighestPrice)],
-    ],
+    columns,
     emptyText,
   );
 }
 
-function renderUserTrades(container, countNode, trades, emptyText) {
+function renderUserTrades(container, countNode, trades, assetNameMap, emptyText) {
+  const columns = [
+    ["Trade ID", (trade) => displayValue(trade.tradeID)],
+    ["Property Name", (trade) => propertyNameForTrade(trade.tradeInfo || {}, assetNameMap)],
+    ["Transaction Role", (trade) => transactionRoleLabel(trade.transactionRole)],
+    ["Current Status", (trade) => transactionStatusLabel(trade.tradeInfo?.transactionStatus)],
+    ["View", () => actionNode("View")],
+  ];
+  if (isDeveloperMode()) {
+    columns.push(
+      ["Asset ID", (trade) => trade.tradeInfo?.assetID || "-"],
+      ["Transaction Status", (trade) => transactionStatusLabel(trade.tradeInfo?.transactionStatus)],
+      ["Transaction Mode", (trade) => transactionModeLabel(trade.tradeInfo?.transactionMode)],
+      ["Is Active", (trade) => activeFlagLabel(trade.isActive)],
+    );
+  }
+
   renderTable(
     container,
     countNode,
     trades,
-    [
-      ["Trade ID", (trade) => displayValue(trade.tradeID)],
-      ["Role", (trade) => transactionRoleLabel(trade.transactionRole)],
-      ["Active", (trade) => activeFlagLabel(trade.isActive)],
-      ["Asset ID", (trade) => trade.tradeInfo?.assetID || "-"],
-      ["Status", (trade) => transactionStatusLabel(trade.tradeInfo?.transactionStatus)],
-      ["Mode", (trade) => transactionModeLabel(trade.tradeInfo?.transactionMode)],
-      ["Current Highest Price", (trade) => displayValue(trade.tradeInfo?.currentHighestPrice)],
-    ],
+    columns,
     emptyText,
   );
 }
@@ -612,6 +663,7 @@ function renderTable(container, countNode, rows, columns, emptyText) {
 
   const table = document.createElement("table");
   table.className = "record-table";
+  table.classList.toggle("developer-table", isDeveloperMode());
 
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
@@ -643,10 +695,7 @@ function renderTable(container, countNode, rows, columns, emptyText) {
 }
 
 function assetPhotoLinkNode(asset) {
-  const photoURL =
-    asset.photoGatewayUrl ||
-    asset.photoGatewayURL ||
-    ipfsGatewayURL(asset.photoCID || assetInfoValue(asset, "photoUrl") || asset.photoUrl);
+  const photoURL = photoLinkURL(asset);
   if (!photoURL) {
     return document.createTextNode("-");
   }
@@ -659,6 +708,53 @@ function assetPhotoLinkNode(asset) {
   link.textContent = "click";
 
   return link;
+}
+
+function photoLinkURL(asset) {
+  return (
+    normalizePhotoURL(asset.photoGatewayUrl) ||
+    normalizePhotoURL(asset.photoGatewayURL) ||
+    normalizePhotoURL(assetInfoValue(asset, "photoUrl")) ||
+    normalizePhotoURL(asset.photoUrl) ||
+    ipfsGatewayURL(asset.photoCID)
+  );
+}
+
+function normalizePhotoURL(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(text)) {
+    return text;
+  }
+
+  return ipfsGatewayURL(text);
+}
+
+function actionNode(label) {
+  const button = document.createElement("button");
+  button.className = "table-action-button";
+  button.type = "button";
+  button.textContent = label;
+
+  return button;
+}
+
+function buildAssetNameMap(assets) {
+  const names = new Map();
+  assets.forEach((asset) => {
+    const name = assetInfoValue(asset, "assetName");
+    if (asset.assetID && name) {
+      names.set(asset.assetID, name);
+    }
+  });
+
+  return names;
+}
+
+function propertyNameForTrade(trade, assetNameMap) {
+  return trade.propertyName || trade.assetName || assetNameMap.get(trade.assetID) || "-";
 }
 
 function assetInfoValue(asset, field) {
@@ -696,7 +792,7 @@ function assetRegistrationTimeLabel(value) {
     return "-";
   }
 
-  return `${year}/${pad2(month)}/${pad2(day)} ${pad2(hour)}:${pad2(minute)}:${pad2(second)} UTC`;
+  return formatTaipeiDateTime(new Date(Date.UTC(year, month - 1, day, hour, minute, second)).toISOString());
 }
 
 function pad2(value) {
@@ -713,24 +809,24 @@ function displayValue(value) {
 
 function legalStatusLabel(status) {
   if (status === 0) {
-    return "Normal (code 0)";
+    return isDeveloperMode() ? "Normal (code 0)" : "Normal";
   }
 
-  return `Unknown (code ${displayValue(status)})`;
+  return isDeveloperMode() ? `Unknown (code ${displayValue(status)})` : "Unknown";
 }
 
 function transactionRoleLabel(role) {
   if (role === 0) {
-    return "Buyer / code 0";
+    return isDeveloperMode() ? "Buyer (code 0)" : "Buyer";
   }
   if (role === 1) {
-    return "Seller / code 1";
+    return isDeveloperMode() ? "Seller (code 1)" : "Seller";
   }
   if (role === 2) {
-    return "Participant / code 2";
+    return isDeveloperMode() ? "Participant (code 2)" : "Participant";
   }
 
-  return `Code ${displayValue(role)}`;
+  return isDeveloperMode() ? `Code ${displayValue(role)}` : "Unknown";
 }
 
 function activeFlagLabel(isActive) {
@@ -752,13 +848,13 @@ function transactionStatusLabel(status) {
     10: "Rejected / code 10",
   };
   if (Object.hasOwn(labels, status)) {
-    return labels[status];
+    return isDeveloperMode() ? labels[status] : labels[status].replace(/ \/ code \d+$/, "");
   }
   if (status === null || status === undefined || status === "") {
     return "-";
   }
 
-  return `Active status / code ${status}`;
+  return isDeveloperMode() ? `Active status (code ${status})` : "Active";
 }
 
 function transactionModeLabel(mode) {
@@ -766,5 +862,5 @@ function transactionModeLabel(mode) {
     return "-";
   }
 
-  return `Mode code ${mode}`;
+  return isDeveloperMode() ? `Mode code ${mode}` : "Transaction";
 }

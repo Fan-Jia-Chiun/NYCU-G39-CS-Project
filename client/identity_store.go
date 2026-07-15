@@ -16,9 +16,9 @@ const (
 )
 
 type localIdentityCache struct {
-	IdentityDID string `json:"identityDID"`
-	BuyerDID    string `json:"buyerDID,omitempty"`
-	SellerDID   string `json:"sellerDID,omitempty"`
+	UserDID   string `json:"userDID"`
+	BuyerDID  string `json:"buyerDID,omitempty"`
+	SellerDID string `json:"sellerDID,omitempty"`
 }
 
 func defaultIdentityStorePath() (string, error) {
@@ -78,18 +78,18 @@ func loadLocalIdentityCache() (localIdentityCache, error) {
 		return localIdentityCache{}, err
 	}
 
-	cache.IdentityDID = strings.TrimSpace(cache.IdentityDID)
+	cache.UserDID = strings.TrimSpace(cache.UserDID)
 	cache.BuyerDID = strings.TrimSpace(cache.BuyerDID)
 	cache.SellerDID = strings.TrimSpace(cache.SellerDID)
 	return cache, nil
 }
 
 func saveLocalIdentityCache(cache localIdentityCache) error {
-	cache.IdentityDID = strings.TrimSpace(cache.IdentityDID)
+	cache.UserDID = strings.TrimSpace(cache.UserDID)
 	cache.BuyerDID = strings.TrimSpace(cache.BuyerDID)
 	cache.SellerDID = strings.TrimSpace(cache.SellerDID)
-	if cache.IdentityDID == "" {
-		return fmt.Errorf("identityDID is required")
+	if cache.UserDID == "" {
+		return fmt.Errorf("userDID is required")
 	}
 
 	path, err := defaultIdentityStorePath()

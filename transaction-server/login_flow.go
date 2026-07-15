@@ -30,7 +30,6 @@ type LoginRequest struct {
 
 type LoginResponse struct {
 	Success                   bool             `json:"success"`
-	IdentityDID               string           `json:"identityDID"`
 	UserDID                   string           `json:"userDID"`
 	BuyerDID                  string           `json:"buyerDID"`
 	SellerDID                 string           `json:"sellerDID"`
@@ -230,7 +229,6 @@ func loginHandlerWithDependencies(resolvePublicKey publicKeyResolver, initialize
 
 		writeJSON(w, http.StatusOK, LoginResponse{
 			Success:                   true,
-			IdentityDID:               req.UserDID,
 			UserDID:                   req.UserDID,
 			BuyerDID:                  data.BuyerDID,
 			SellerDID:                 data.SellerDID,

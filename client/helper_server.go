@@ -28,8 +28,7 @@ type helperServer struct {
 }
 
 type signLoginRequest struct {
-	UserDID     string `json:"userDID"`
-	IdentityDID string `json:"identityDID"`
+	UserDID string `json:"userDID"`
 }
 
 type signLoginResponse struct {
@@ -39,7 +38,7 @@ type signLoginResponse struct {
 }
 
 type signAssetRequest struct {
-	IdentityDID   string `json:"identityDID"`
+	UserDID       string `json:"userDID"`
 	AssetName     string `json:"assetName"`
 	AssetLocation string `json:"assetLocation"`
 	Description   string `json:"description"`
@@ -47,9 +46,9 @@ type signAssetRequest struct {
 }
 
 type signAssetResponse struct {
-	IdentityDID string `json:"identityDID"`
-	Timestamp   string `json:"timestamp"`
-	Signature   string `json:"signature"`
+	UserDID   string `json:"userDID"`
+	Timestamp string `json:"timestamp"`
+	Signature string `json:"signature"`
 }
 
 type apiRegisterRequest struct {
@@ -64,7 +63,6 @@ type apiRegisterRequest struct {
 type apiRegisterResponse struct {
 	Success      bool   `json:"success"`
 	Message      string `json:"message"`
-	IdentityDID  string `json:"identityDID"`
 	UserDID      string `json:"userDID"`
 	PIMgrAddr    string `json:"pimgrAddr,omitempty"`
 	BuyerDID     string `json:"buyerDID,omitempty"`
@@ -85,7 +83,7 @@ type apiAssetRegistrationResponse struct {
 type apiIdentityResponse struct {
 	Success      bool   `json:"success"`
 	CacheFound   bool   `json:"cacheFound"`
-	IdentityDID  string `json:"identityDID"`
+	UserDID      string `json:"userDID"`
 	BuyerDID     string `json:"buyerDID,omitempty"`
 	SellerDID    string `json:"sellerDID,omitempty"`
 	IdentityPath string `json:"identityPath,omitempty"`
@@ -93,10 +91,9 @@ type apiIdentityResponse struct {
 }
 
 type apiSaveIdentityRequest struct {
-	IdentityDID string `json:"identityDID"`
-	UserDID     string `json:"userDID,omitempty"`
-	BuyerDID    string `json:"buyerDID,omitempty"`
-	SellerDID   string `json:"sellerDID,omitempty"`
+	UserDID   string `json:"userDID,omitempty"`
+	BuyerDID  string `json:"buyerDID,omitempty"`
+	SellerDID string `json:"sellerDID,omitempty"`
 }
 
 func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string) error {
@@ -181,7 +178,7 @@ func (s helperServer) readIdentityCacheHandler(w http.ResponseWriter, r *http.Re
 	helperJSON(w, http.StatusOK, apiIdentityResponse{
 		Success:      true,
 		CacheFound:   true,
-		IdentityDID:  cache.IdentityDID,
+		UserDID:      cache.UserDID,
 		BuyerDID:     cache.BuyerDID,
 		SellerDID:    cache.SellerDID,
 		IdentityPath: identityPath,
@@ -198,16 +195,16 @@ func (s helperServer) saveIdentityCacheHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	identityDID := strings.TrimSpace(firstNonEmpty(req.IdentityDID, req.UserDID))
-	if identityDID == "" {
-		helperError(w, http.StatusBadRequest, "identityDID is required")
+	userDID := strings.TrimSpace(req.UserDID)
+	if userDID == "" {
+		helperError(w, http.StatusBadRequest, "userDID is required")
 		return
 	}
 
 	if err := saveLocalIdentityCache(localIdentityCache{
-		IdentityDID: identityDID,
-		BuyerDID:    strings.TrimSpace(req.BuyerDID),
-		SellerDID:   strings.TrimSpace(req.SellerDID),
+		UserDID:   userDID,
+		BuyerDID:  strings.TrimSpace(req.BuyerDID),
+		SellerDID: strings.TrimSpace(req.SellerDID),
 	}); err != nil {
 		log.Printf("failed to save local identity cache: %v", err)
 		helperError(w, http.StatusInternalServerError, "failed to save identity cache")
@@ -222,7 +219,7 @@ func (s helperServer) saveIdentityCacheHandler(w http.ResponseWriter, r *http.Re
 	helperJSON(w, http.StatusOK, apiIdentityResponse{
 		Success:      true,
 		CacheFound:   true,
-		IdentityDID:  identityDID,
+		UserDID:      userDID,
 		BuyerDID:     strings.TrimSpace(req.BuyerDID),
 		SellerDID:    strings.TrimSpace(req.SellerDID),
 		IdentityPath: identityPath,
@@ -298,7 +295,6 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 	helperJSON(w, http.StatusOK, apiRegisterResponse{
 		Success:      true,
 		Message:      firstNonEmpty(authorityResp.Message, "identity registered"),
-		IdentityDID:  authorityResp.UserDID,
 		UserDID:      authorityResp.UserDID,
 		PIMgrAddr:    authorityResp.PIMgrAddr,
 		BuyerDID:     authorityResp.BuyerDID,
@@ -320,10 +316,10 @@ func (s helperServer) apiLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userDID := strings.TrimSpace(firstNonEmpty(req.UserDID, req.IdentityDID))
+	userDID := strings.TrimSpace(req.UserDID)
 	if userDID == "" {
 		if cache, err := loadLocalIdentityCache(); err == nil {
-			userDID = cache.IdentityDID
+			userDID = cache.UserDID
 		}
 	}
 
@@ -372,7 +368,7 @@ func (s helperServer) apiAssetRegistrationHandler(w http.ResponseWriter, r *http
 
 	input := AssetRegistrationInput{
 		SessionToken:  firstFormValue(r.MultipartForm, "sessionToken"),
-		IdentityDID:   firstFormValue(r.MultipartForm, "identityDID"),
+		UserDID:       firstFormValue(r.MultipartForm, "userDID"),
 		AssetName:     firstFormValue(r.MultipartForm, "assetName"),
 		AssetLocation: firstFormValue(r.MultipartForm, "assetLocation"),
 		Description:   firstFormValue(r.MultipartForm, "description"),
@@ -449,7 +445,7 @@ func (s helperServer) signLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userDID := strings.TrimSpace(firstNonEmpty(req.UserDID, req.IdentityDID))
+	userDID := strings.TrimSpace(req.UserDID)
 	loginReq, err := newLoginRequest(userDID, privateKey, nowUTC())
 	if err != nil {
 		helperError(w, http.StatusBadRequest, err.Error())
@@ -476,14 +472,14 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.IdentityDID = strings.TrimSpace(req.IdentityDID)
+	req.UserDID = strings.TrimSpace(req.UserDID)
 	req.AssetName = strings.TrimSpace(req.AssetName)
 	req.AssetLocation = strings.TrimSpace(req.AssetLocation)
 	req.Description = strings.TrimSpace(req.Description)
 	req.PhotoHash = strings.TrimSpace(req.PhotoHash)
 
-	if req.IdentityDID == "" {
-		helperError(w, http.StatusBadRequest, "identityDID is required")
+	if req.UserDID == "" {
+		helperError(w, http.StatusBadRequest, "userDID is required")
 		return
 	}
 	if req.AssetName == "" {
@@ -500,7 +496,7 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fields := map[string]string{
-		"identityDID":   req.IdentityDID,
+		"userDID":       req.UserDID,
 		"assetName":     req.AssetName,
 		"assetLocation": req.AssetLocation,
 		"description":   req.Description,
@@ -521,7 +517,7 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 
 	timestamp := nowUTC().UTC().Format(time.RFC3339)
 	credential := buildRegisterAssetCredential(
-		req.IdentityDID,
+		req.UserDID,
 		req.AssetName,
 		req.AssetLocation,
 		req.Description,
@@ -536,9 +532,9 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helperJSON(w, http.StatusOK, signAssetResponse{
-		IdentityDID: req.IdentityDID,
-		Timestamp:   timestamp,
-		Signature:   base64.StdEncoding.EncodeToString(signature),
+		UserDID:   req.UserDID,
+		Timestamp: timestamp,
+		Signature: base64.StdEncoding.EncodeToString(signature),
 	})
 }
 
@@ -618,26 +614,25 @@ func localClientWebDir() string {
 	return filepath.Join("..", "transaction-server", "web")
 }
 
-func saveIdentityCacheFromLoginResponse(body []byte, fallbackIdentityDID string) error {
+func saveIdentityCacheFromLoginResponse(body []byte, fallbackUserDID string) error {
 	var resp struct {
-		IdentityDID string `json:"identityDID"`
-		UserDID     string `json:"userDID"`
-		BuyerDID    string `json:"buyerDID"`
-		SellerDID   string `json:"sellerDID"`
+		UserDID   string `json:"userDID"`
+		BuyerDID  string `json:"buyerDID"`
+		SellerDID string `json:"sellerDID"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return err
 	}
 
-	identityDID := strings.TrimSpace(firstNonEmpty(resp.IdentityDID, resp.UserDID, fallbackIdentityDID))
-	if identityDID == "" {
-		return fmt.Errorf("login response did not include identityDID")
+	userDID := strings.TrimSpace(firstNonEmpty(resp.UserDID, fallbackUserDID))
+	if userDID == "" {
+		return fmt.Errorf("login response did not include userDID")
 	}
 
 	return saveLocalIdentityCache(localIdentityCache{
-		IdentityDID: identityDID,
-		BuyerDID:    resp.BuyerDID,
-		SellerDID:   resp.SellerDID,
+		UserDID:   userDID,
+		BuyerDID:  resp.BuyerDID,
+		SellerDID: resp.SellerDID,
 	})
 }
 

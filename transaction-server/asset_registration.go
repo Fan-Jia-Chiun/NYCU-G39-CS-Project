@@ -73,12 +73,12 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 			return
 		}
 
-		if _, err := loginSessions.Validate(req.SessionToken, req.IdentityDID, nowUTC()); err != nil {
+		if _, err := loginSessions.Validate(req.SessionToken, req.UserDID, nowUTC()); err != nil {
 			switch err {
 			case errSessionExpired:
 				writeLoginError(w, http.StatusUnauthorized, "session expired; please log in again")
 			case errSessionMismatch:
-				writeLoginError(w, http.StatusForbidden, "session does not match identityDID")
+				writeLoginError(w, http.StatusForbidden, "session does not match userDID")
 			default:
 				writeLoginError(w, http.StatusUnauthorized, "session is invalid; please log in again")
 			}
@@ -109,7 +109,7 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 		}
 
 		credential := buildRegisterAssetCredential(
-			req.IdentityDID,
+			req.UserDID,
 			req.AssetName,
 			req.AssetLocation,
 			req.Description,
@@ -117,9 +117,9 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 			req.Timestamp,
 		)
 
-		publicKeyText, err := evaluatePublicKey(fabricGateway, req.IdentityDID)
+		publicKeyText, err := evaluatePublicKey(fabricGateway, req.UserDID)
 		if err != nil {
-			log.Printf("failed to get public key for DID %s: %v", req.IdentityDID, err)
+			log.Printf("failed to get public key for DID %s: %v", req.UserDID, err)
 			if isPublicKeyNotFoundError(err) {
 				writeLoginError(w, http.StatusNotFound, "user public key not found")
 				return
@@ -130,7 +130,7 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 
 		publicKey, err := parseECDSAPublicKey(publicKeyText)
 		if err != nil {
-			log.Printf("stored public key for DID %s is invalid: %v", req.IdentityDID, err)
+			log.Printf("stored public key for DID %s is invalid: %v", req.UserDID, err)
 			writeLoginError(w, http.StatusInternalServerError, "stored public key is invalid")
 			return
 		}
@@ -186,7 +186,7 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 		}
 		cacheAssetInfo(assetInfoAddr, assetInfo)
 
-		assetID, assetAddr, err := registerAssetOnChain(fabricGateway, assetInfoAddr, req.IdentityDID)
+		assetID, assetAddr, err := registerAssetOnChain(fabricGateway, assetInfoAddr, req.UserDID)
 		if err != nil {
 			log.Printf("failed to register asset on chain after IPFS upload photo=%s assetInfo=%s: %v", photoCID, assetInfoAddr, err)
 			writeLoginError(w, http.StatusBadGateway, "failed to register asset on chain")
@@ -206,7 +206,7 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 
 type assetRegistrationForm struct {
 	SessionToken  string
-	IdentityDID   string
+	UserDID       string
 	AssetName     string
 	AssetLocation string
 	Description   string
@@ -218,7 +218,7 @@ type assetRegistrationForm struct {
 func readAssetRegistrationForm(form *multipart.Form) assetRegistrationForm {
 	return assetRegistrationForm{
 		SessionToken:  firstFormValue(form, "sessionToken"),
-		IdentityDID:   firstFormValue(form, "identityDID"),
+		UserDID:       firstFormValue(form, "userDID"),
 		AssetName:     firstFormValue(form, "assetName"),
 		AssetLocation: firstFormValue(form, "assetLocation"),
 		Description:   firstFormValue(form, "description"),
@@ -239,7 +239,7 @@ func firstFormValue(form *multipart.Form, name string) string {
 func validateAssetRegistrationFields(req assetRegistrationForm) error {
 	required := map[string]string{
 		"sessionToken":  req.SessionToken,
-		"identityDID":   req.IdentityDID,
+		"userDID":       req.UserDID,
 		"assetName":     req.AssetName,
 		"assetLocation": req.AssetLocation,
 		"timestamp":     req.Timestamp,
@@ -253,7 +253,7 @@ func validateAssetRegistrationFields(req assetRegistrationForm) error {
 	}
 
 	credentialFields := map[string]string{
-		"identityDID":   req.IdentityDID,
+		"userDID":       req.UserDID,
 		"assetName":     req.AssetName,
 		"assetLocation": req.AssetLocation,
 		"description":   req.Description,
@@ -288,8 +288,8 @@ func validateCredentialField(name string, value string) error {
 	return nil
 }
 
-func buildRegisterAssetCredential(identityDID string, assetName string, assetLocation string, description string, photoHash string, timestamp string) string {
-	return "REGISTER_ASSET|" + identityDID + "|" + assetName + "|" + assetLocation + "|" + description + "|" + photoHash + "|" + timestamp
+func buildRegisterAssetCredential(userDID string, assetName string, assetLocation string, description string, photoHash string, timestamp string) string {
+	return "REGISTER_ASSET|" + userDID + "|" + assetName + "|" + assetLocation + "|" + description + "|" + photoHash + "|" + timestamp
 }
 
 func readPhotoBytes(file multipart.File) ([]byte, error) {
@@ -350,8 +350,8 @@ func timeInfoFromTime(t time.Time) TimeInfo {
 	}
 }
 
-func evaluatePublicKey(fabricGateway *FabricGateway, identityDID string) (string, error) {
-	result, err := fabricGateway.Contract.EvaluateTransaction("GetPublicKey", identityDID)
+func evaluatePublicKey(fabricGateway *FabricGateway, userDID string) (string, error) {
+	result, err := fabricGateway.Contract.EvaluateTransaction("GetPublicKey", userDID)
 	if err != nil {
 		return "", err
 	}
@@ -359,8 +359,8 @@ func evaluatePublicKey(fabricGateway *FabricGateway, identityDID string) (string
 	return string(result), nil
 }
 
-func registerAssetOnChain(fabricGateway *FabricGateway, assetInfoAddr string, identityDID string) (string, string, error) {
-	result, err := fabricGateway.Contract.SubmitTransaction("RegisterAsset", assetInfoAddr, identityDID)
+func registerAssetOnChain(fabricGateway *FabricGateway, assetInfoAddr string, userDID string) (string, string, error) {
+	result, err := fabricGateway.Contract.SubmitTransaction("RegisterAsset", assetInfoAddr, userDID)
 	if err != nil {
 		return "", "", err
 	}

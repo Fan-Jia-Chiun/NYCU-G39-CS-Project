@@ -24,7 +24,7 @@ func TestBuildRegisterAssetCredential(t *testing.T) {
 func TestValidateAssetRegistrationFieldsRejectsSeparator(t *testing.T) {
 	err := validateAssetRegistrationFields(assetRegistrationForm{
 		SessionToken:  "session",
-		IdentityDID:   "did:nycu-g39:identity:abc",
+		UserDID:       "did:nycu-g39:identity:abc",
 		AssetName:     "House|Bad",
 		AssetLocation: "Taipei",
 		Timestamp:     "2026-07-15T08:30:00Z",
@@ -39,7 +39,7 @@ func TestValidateAssetRegistrationFieldsRejectsSeparator(t *testing.T) {
 func TestValidateAssetRegistrationFieldsAllowsEmptyDescription(t *testing.T) {
 	err := validateAssetRegistrationFields(assetRegistrationForm{
 		SessionToken:  "session",
-		IdentityDID:   "did:nycu-g39:identity:abc",
+		UserDID:       "did:nycu-g39:identity:abc",
 		AssetName:     "House",
 		AssetLocation: "Taipei",
 		Description:   "",

@@ -39,6 +39,14 @@ body {
   margin-bottom: 18px;
 }
 
+.topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 h1,
 h2,
 p {
@@ -68,6 +76,32 @@ h2 {
   background: #fff;
   color: var(--muted);
   white-space: nowrap;
+}
+
+.mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.mode-button {
+  min-height: 36px;
+  border-radius: 0;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.mode-button:hover,
+.mode-button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+body[data-mode="user"] .dev-only {
+  display: none !important;
 }
 
 .status-tag.ok {
@@ -274,6 +308,25 @@ output strong,
   font-weight: 400;
 }
 
+.copy-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.copy-line strong {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.copy-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .file-row {
   display: grid;
   grid-template-columns: minmax(240px, 360px) minmax(0, 1fr);
@@ -371,9 +424,13 @@ h3 {
 
 .record-table {
   width: 100%;
-  min-width: 1100px;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+.record-table.developer-table {
+  min-width: 1180px;
 }
 
 .record-table th,
@@ -409,6 +466,12 @@ h3 {
 .asset-photo-link:hover {
   color: var(--accent-strong);
   text-decoration: underline;
+}
+
+.table-action-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 @media (max-width: 760px) {

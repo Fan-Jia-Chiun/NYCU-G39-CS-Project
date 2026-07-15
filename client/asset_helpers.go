@@ -15,7 +15,7 @@ import (
 
 type AssetRegistrationInput struct {
 	SessionToken  string
-	IdentityDID   string
+	UserDID       string
 	AssetName     string
 	AssetLocation string
 	Description   string
@@ -44,7 +44,7 @@ func newAssetRegistrationPayload(input AssetRegistrationInput, privateKey *ecdsa
 
 func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName string, photoBytes []byte, privateKey *ecdsa.PrivateKey, now time.Time) (AssetRegistrationPayload, error) {
 	input.SessionToken = strings.TrimSpace(input.SessionToken)
-	input.IdentityDID = strings.TrimSpace(input.IdentityDID)
+	input.UserDID = strings.TrimSpace(input.UserDID)
 	input.AssetName = strings.TrimSpace(input.AssetName)
 	input.AssetLocation = strings.TrimSpace(input.AssetLocation)
 	input.Description = strings.TrimSpace(input.Description)
@@ -53,8 +53,8 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	if input.SessionToken == "" {
 		return AssetRegistrationPayload{}, fmt.Errorf("sessionToken is required")
 	}
-	if input.IdentityDID == "" {
-		return AssetRegistrationPayload{}, fmt.Errorf("identityDID is required")
+	if input.UserDID == "" {
+		return AssetRegistrationPayload{}, fmt.Errorf("userDID is required")
 	}
 	if input.AssetName == "" {
 		return AssetRegistrationPayload{}, fmt.Errorf("assetName is required")
@@ -73,7 +73,7 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	}
 
 	credentialFields := map[string]string{
-		"identityDID":   input.IdentityDID,
+		"userDID":       input.UserDID,
 		"assetName":     input.AssetName,
 		"assetLocation": input.AssetLocation,
 		"description":   input.Description,
@@ -87,7 +87,7 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	photoHash := assetSHA256Hex(photoBytes)
 	timestamp := now.UTC().Format(time.RFC3339)
 	credential := buildRegisterAssetCredential(
-		input.IdentityDID,
+		input.UserDID,
 		input.AssetName,
 		input.AssetLocation,
 		input.Description,
@@ -103,7 +103,7 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	return AssetRegistrationPayload{
 		Fields: map[string]string{
 			"sessionToken":  input.SessionToken,
-			"identityDID":   input.IdentityDID,
+			"userDID":       input.UserDID,
 			"assetName":     input.AssetName,
 			"assetLocation": input.AssetLocation,
 			"description":   input.Description,
@@ -116,8 +116,8 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	}, nil
 }
 
-func buildRegisterAssetCredential(identityDID string, assetName string, assetLocation string, description string, photoHash string, timestamp string) string {
-	return "REGISTER_ASSET|" + identityDID + "|" + assetName + "|" + assetLocation + "|" + description + "|" + photoHash + "|" + timestamp
+func buildRegisterAssetCredential(userDID string, assetName string, assetLocation string, description string, photoHash string, timestamp string) string {
+	return "REGISTER_ASSET|" + userDID + "|" + assetName + "|" + assetLocation + "|" + description + "|" + photoHash + "|" + timestamp
 }
 
 func validateAssetCredentialField(name string, value string) error {

@@ -13,26 +13,30 @@
           <h1>Blockchain-based Property Auction System</h1>
           <p>使用者註冊、登入與財產註冊展示</p>
         </div>
-        <div class="server-pill">Local Client: 8090</div>
+        <div class="topbar-tools">
+          <div class="mode-switch" aria-label="Interface mode">
+            <button id="userModeButton" class="mode-button" type="button">User Mode</button>
+            <button id="developerModeButton" class="mode-button active" type="button">Developer Mode</button>
+          </div>
+          <div class="server-pill">Local Client: 8090</div>
+        </div>
       </header>
 
       <section class="panel compact-panel">
         <div class="form-grid">
-          <label>
+          <label class="dev-only">
             Local Client URL
             <input id="clientURL" type="url" value="http://127.0.0.1:8090" />
           </label>
           <label>
-            Current Identity DID
-            <input id="identityDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
+            Current User DID
+            <input id="userDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
           </label>
         </div>
         <div class="identity-actions">
-          <button id="loadIdentityButton" type="button">Read identity.json</button>
-          <button id="saveIdentityButton" type="button">Save identity.json</button>
-          <button id="saveIdentityFolderButton" type="button">Save to Folder</button>
+          <button id="saveIdentityFolderButton" type="button">Save identity.json to Folder</button>
           <label class="identity-file-picker">
-            Select identity.json
+            Read identity.json
             <input id="identityFile" type="file" accept=".json,application/json" />
           </label>
           <span id="identityCacheState" class="status-tag idle">Cache not loaded</span>
@@ -42,11 +46,11 @@
             <span>Identity File Path</span>
             <strong id="identityPath">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Cached Buyer DID</span>
             <strong id="cachedBuyerDID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Cached Seller DID</span>
             <strong id="cachedSellerDID">-</strong>
           </output>
@@ -93,21 +97,21 @@
             <span>User DID</span>
             <strong id="registeredUserDID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>PIMgr Addr</span>
             <strong id="registeredPIMgrAddr">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Buyer DID</span>
             <strong id="registeredBuyerDID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Seller DID</span>
             <strong id="registeredSellerDID">-</strong>
           </output>
         </div>
 
-        <pre id="registerResult" class="response-box"></pre>
+        <pre id="registerResult" class="response-box dev-only"></pre>
       </section>
 
       <section id="loginPanel" class="panel tab-panel">
@@ -126,6 +130,13 @@
             <strong id="accountStatus" class="split-value">-</strong>
           </output>
           <output>
+            <span>User DID</span>
+            <span class="copy-line">
+              <strong id="loginUserDID">-</strong>
+              <button id="copyUserDIDButton" class="copy-button" type="button">Copy</button>
+            </span>
+          </output>
+          <output>
             <span>Buyer Credit Score</span>
             <strong id="buyerCreditScore">-</strong>
           </output>
@@ -133,21 +144,21 @@
             <span>Seller Credit Score</span>
             <strong id="sellerCreditScore">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Verified Buyer DID</span>
             <strong id="verifiedBuyerDID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Verified Seller DID</span>
             <strong id="verifiedSellerDID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Session Expiration</span>
             <strong id="sessionExpiration" class="split-value">-</strong>
           </output>
         </div>
 
-        <label>
+        <label class="dev-only">
           Session Token
           <textarea id="sessionToken" rows="2" readonly></textarea>
         </label>
@@ -186,7 +197,7 @@
           </section>
         </div>
 
-        <pre id="loginResult" class="response-box"></pre>
+        <pre id="loginResult" class="response-box dev-only"></pre>
       </section>
 
       <section id="assetPanel" class="panel tab-panel">
@@ -231,24 +242,24 @@
             <span>Result</span>
             <strong id="assetMessage">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Asset ID</span>
             <strong id="assetID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>Photo CID</span>
             <strong id="photoCID">-</strong>
           </output>
-          <output>
+          <output class="dev-only">
             <span>AssetInfoAddr</span>
             <strong id="assetInfoAddr">-</strong>
           </output>
         </div>
 
-        <pre id="assetResult" class="response-box"></pre>
+        <pre id="assetResult" class="response-box dev-only"></pre>
       </section>
     </main>
 
-    <script src="./app.js?v=20260715-asset-info-display"></script>
+    <script src="./app.js?v=20260715-ui-modes"></script>
   </body>
 </html>

@@ -14,7 +14,7 @@ type IdentityContract struct {
 }
 
 // RegisterIdentity creates a user DID and binds it to a PIMgr record.
-// Input: none. Output: generated identity DID.
+// Input: none. Output: generated user DID.
 func (c *IdentityContract) RegisterIdentity(ctx contractapi.TransactionContextInterface) (string, error) {
 	if err := requireAnyRole(ctx, roleAuthority); err != nil {
 		return "", err

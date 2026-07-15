@@ -12,9 +12,9 @@ func TestSaveAndLoadLocalIdentityCache(t *testing.T) {
 	t.Setenv("PROPERTY_AUCTION_IDENTITY_PATH", path)
 
 	want := localIdentityCache{
-		IdentityDID: "did:nycu-g39:identity:test",
-		BuyerDID:    "did:nycu-g39:buyer:test",
-		SellerDID:   "did:nycu-g39:seller:test",
+		UserDID:   "did:nycu-g39:identity:test",
+		BuyerDID:  "did:nycu-g39:buyer:test",
+		SellerDID: "did:nycu-g39:seller:test",
 	}
 	if err := saveLocalIdentityCache(want); err != nil {
 		t.Fatalf("saveLocalIdentityCache() error = %v", err)

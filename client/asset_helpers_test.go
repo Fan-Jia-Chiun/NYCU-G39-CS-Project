@@ -28,7 +28,7 @@ func TestNewAssetRegistrationPayloadSignsCredential(t *testing.T) {
 	now := time.Date(2026, 7, 15, 8, 30, 0, 0, time.UTC)
 	payload, err := newAssetRegistrationPayload(AssetRegistrationInput{
 		SessionToken:  "session-token",
-		IdentityDID:   "did:nycu-g39:identity:abc",
+		UserDID:       "did:nycu-g39:identity:abc",
 		AssetName:     "House",
 		AssetLocation: "Taipei",
 		Description:   "",
@@ -51,7 +51,7 @@ func TestNewAssetRegistrationPayloadSignsCredential(t *testing.T) {
 		t.Fatalf("signature is not base64: %v", err)
 	}
 	credential := buildRegisterAssetCredential(
-		payload.Fields["identityDID"],
+		payload.Fields["userDID"],
 		payload.Fields["assetName"],
 		payload.Fields["assetLocation"],
 		payload.Fields["description"],
@@ -72,7 +72,7 @@ func TestNewAssetRegistrationPayloadRejectsSeparator(t *testing.T) {
 
 	_, err = newAssetRegistrationPayload(AssetRegistrationInput{
 		SessionToken:  "session-token",
-		IdentityDID:   "did:nycu-g39:identity:abc",
+		UserDID:       "did:nycu-g39:identity:abc",
 		AssetName:     "House|Bad",
 		AssetLocation: "Taipei",
 		PhotoPath:     "unused",

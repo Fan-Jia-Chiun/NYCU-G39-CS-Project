@@ -37,7 +37,6 @@ func main() {
 	email := flag.String("email", "", "email")
 	phone := flag.String("phone", "", "phone")
 	userDID := flag.String("userDID", "", "user DID for login")
-	identityDID := flag.String("identityDID", "", "identity DID alias for requests that use identityDID")
 	sessionToken := flag.String("sessionToken", "", "login session token")
 	assetName := flag.String("assetName", "", "asset name")
 	assetLocation := flag.String("assetLocation", "", "asset location")
@@ -46,7 +45,7 @@ func main() {
 	keyDir := flag.String("keyDir", defaultKeyDir(), "directory for the local identity key pair")
 	flag.Parse()
 
-	resolvedUserDID := firstNonEmpty(*userDID, *identityDID)
+	resolvedUserDID := *userDID
 	switch *mode {
 	case "register":
 		if err := runRegister(*registerURL, *keyDir, RegisterRequest{
@@ -66,7 +65,7 @@ func main() {
 	case "register-asset":
 		if err := runRegisterAsset(*assetURL, *keyDir, AssetRegistrationInput{
 			SessionToken:  *sessionToken,
-			IdentityDID:   resolvedUserDID,
+			UserDID:       resolvedUserDID,
 			AssetName:     *assetName,
 			AssetLocation: *assetLocation,
 			Description:   *description,

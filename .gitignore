@@ -5,3 +5,5 @@ chaincode/*/vendor/
 
 # Local client identity keys.
 client/keys/
+
+test.png
