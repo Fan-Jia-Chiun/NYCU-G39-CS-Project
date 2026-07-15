@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Property Registration Demo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Property Registration Demo</h1>
+          <p>登入、Session 建立與財產註冊展示</p>
+        </div>
+        <div class="server-pill">Transaction Server :8082</div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>登入</h2>
+          <span id="loginState" class="status-tag idle">Not logged in</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Identity DID
+            <input id="identityDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
+          </label>
+          <label>
+            Client Helper URL
+            <input id="helperURL" type="url" value="http://127.0.0.1:8090" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="loginButton" type="button">登入並建立 Session</button>
+        </div>
+
+        <div class="result-grid">
+          <output>
+            <span>Account Status</span>
+            <strong id="accountStatus">-</strong>
+          </output>
+          <output>
+            <span>Buyer Credit Score</span>
+            <strong id="buyerCreditScore">-</strong>
+          </output>
+          <output>
+            <span>Seller Credit Score</span>
+            <strong id="sellerCreditScore">-</strong>
+          </output>
+          <output>
+            <span>Session Expiration</span>
+            <strong id="sessionExpiration">-</strong>
+          </output>
+        </div>
+
+        <label>
+          Session Token
+          <textarea id="sessionToken" rows="2" readonly></textarea>
+        </label>
+
+        <pre id="loginResult" class="response-box"></pre>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>財產註冊</h2>
+          <span id="assetState" class="status-tag idle">Waiting</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Asset Name
+            <input id="assetName" type="text" value="Demo Property 01" />
+          </label>
+          <label>
+            Asset Location
+            <input id="assetLocation" type="text" value="Taipei City" />
+          </label>
+        </div>
+
+        <label>
+          Description
+          <textarea id="description" rows="3">First property registration test</textarea>
+        </label>
+
+        <div class="file-row">
+          <label class="file-input">
+            Photo File
+            <input id="photo" type="file" accept="image/png,image/jpeg,image/webp" />
+          </label>
+          <div class="file-meta">
+            <div><span>File</span><strong id="photoName">-</strong></div>
+            <div><span>photoHash</span><code id="photoHash">-</code></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="registerAssetButton" type="button">Register Asset</button>
+        </div>
+
+        <div class="result-grid">
+          <output>
+            <span>Result</span>
+            <strong id="assetMessage">-</strong>
+          </output>
+          <output>
+            <span>Asset ID</span>
+            <strong id="assetID">-</strong>
+          </output>
+          <output>
+            <span>Photo CID</span>
+            <strong id="photoCID">-</strong>
+          </output>
+          <output>
+            <span>AssetInfoAddr</span>
+            <strong id="assetInfoAddr">-</strong>
+          </output>
+        </div>
+
+        <pre id="assetResult" class="response-box"></pre>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

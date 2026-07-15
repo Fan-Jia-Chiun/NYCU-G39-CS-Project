@@ -31,6 +31,7 @@ func main() {
 	registerURL := flag.String("url", "http://localhost:8081/register", "authority server register endpoint")
 	loginURL := flag.String("loginURL", "http://localhost:8082/login", "transaction server login endpoint")
 	assetURL := flag.String("assetURL", "http://localhost:8082/assets", "transaction server asset registration endpoint")
+	helperAddr := flag.String("helperAddr", "127.0.0.1:8090", "local signing helper listen address")
 	userName := flag.String("userName", "", "user name")
 	idCardNumber := flag.String("idCardNumber", "", "ID card number")
 	email := flag.String("email", "", "email")
@@ -72,6 +73,11 @@ func main() {
 			PhotoPath:     *photoPath,
 		}); err != nil {
 			log.Printf("asset registration request failed: %v", err)
+			os.Exit(1)
+		}
+	case "helper":
+		if err := runHelperServer(*helperAddr, *keyDir); err != nil {
+			log.Printf("helper server failed: %v", err)
 			os.Exit(1)
 		}
 	default:
