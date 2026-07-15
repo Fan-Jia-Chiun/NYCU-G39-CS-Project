@@ -1,20 +1,30 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
+const localMaxAssetRequestSize = 11 << 20
+
 type helperServer struct {
-	privateKey *ecdsa.PrivateKey
+	keyDir      string
+	registerURL string
+	loginURL    string
+	assetURL    string
 }
 
 type signLoginRequest struct {
@@ -42,19 +52,70 @@ type signAssetResponse struct {
 	Signature   string `json:"signature"`
 }
 
-func runHelperServer(addr string, keyDir string) error {
-	privateKey, err := readPrivateKey(privateKeyPath(keyDir))
-	if err != nil {
-		return fmt.Errorf("failed to read local private key: %w", err)
+type apiRegisterRequest struct {
+	UserName     string `json:"userName"`
+	IDCardNumber string `json:"idCardNumber"`
+	Email        string `json:"email"`
+	Phone        string `json:"phone"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+}
+
+type apiRegisterResponse struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	UserDID   string `json:"userDID"`
+	PIMgrAddr string `json:"pimgrAddr,omitempty"`
+	BuyerDID  string `json:"buyerDID,omitempty"`
+	SellerDID string `json:"sellerDID,omitempty"`
+}
+
+type apiAssetRegistrationResponse struct {
+	Success       bool   `json:"success"`
+	Message       string `json:"message"`
+	AssetID       string `json:"assetID,omitempty"`
+	AssetAddr     string `json:"assetAddr,omitempty"`
+	PhotoCID      string `json:"photoCID,omitempty"`
+	AssetInfoAddr string `json:"assetInfoAddr,omitempty"`
+	PhotoHash     string `json:"photoHash,omitempty"`
+}
+
+type localClientState struct {
+	UserDID   string `json:"userDID"`
+	PIMgrAddr string `json:"pimgrAddr,omitempty"`
+	BuyerDID  string `json:"buyerDID,omitempty"`
+	SellerDID string `json:"sellerDID,omitempty"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string) error {
+	server := helperServer{
+		keyDir:      strings.TrimSpace(keyDir),
+		registerURL: strings.TrimSpace(registerURL),
+		loginURL:    strings.TrimSpace(loginURL),
+		assetURL:    strings.TrimSpace(assetURL),
+	}
+	if server.keyDir == "" {
+		return fmt.Errorf("key directory is required")
+	}
+	if server.registerURL == "" || server.loginURL == "" || server.assetURL == "" {
+		return fmt.Errorf("authority and transaction server URLs are required")
 	}
 
-	server := helperServer{privateKey: privateKey}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", withCORS(server.healthHandler))
+	mux.HandleFunc("/api/register", withCORS(server.apiRegisterHandler))
+	mux.HandleFunc("/api/login", withCORS(server.apiLoginHandler))
+	mux.HandleFunc("/api/assets/register", withCORS(server.apiAssetRegistrationHandler))
 	mux.HandleFunc("/sign/login", withCORS(server.signLoginHandler))
 	mux.HandleFunc("/sign/register-asset", withCORS(server.signAssetHandler))
+	mux.Handle("/", http.FileServer(http.Dir(localClientWebDir())))
 
-	log.Printf("Client signing helper listening on: %s", addr)
+	log.Printf("Client Local Server listening on: %s", addr)
+	log.Printf("Client Demo URL: http://%s/", addr)
+	log.Printf("Authority register endpoint: %s", server.registerURL)
+	log.Printf("Transaction login endpoint: %s", server.loginURL)
+	log.Printf("Transaction asset endpoint: %s", server.assetURL)
 	return http.ListenAndServe(addr, mux)
 }
 
@@ -65,6 +126,203 @@ func (s helperServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helperJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	defer r.Body.Close()
+
+	var req apiRegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helperError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.UserName = strings.TrimSpace(req.UserName)
+	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+
+	if req.UserName == "" || req.IDCardNumber == "" || req.Email == "" || req.Phone == "" {
+		helperError(w, http.StatusBadRequest, "userName, idCardNumber, email, and phone are required")
+		return
+	}
+
+	publicKey, err := ensureIdentityKeyPair(s.keyDir)
+	if err != nil {
+		helperError(w, http.StatusInternalServerError, "failed to prepare local identity key pair")
+		return
+	}
+
+	body, statusCode, err := postJSONToServer(s.registerURL, RegisterRequest{
+		UserName:     req.UserName,
+		IDCardNumber: req.IDCardNumber,
+		Email:        req.Email,
+		Phone:        req.Phone,
+		PublicKey:    publicKey,
+	})
+	if err != nil {
+		helperError(w, http.StatusBadGateway, "failed to call authority server")
+		return
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		forwardUpstreamError(w, statusCode, body, "authority server rejected registration")
+		return
+	}
+
+	var authorityResp struct {
+		Message   string `json:"message"`
+		UserDID   string `json:"userDID"`
+		PIMgrAddr string `json:"pimgrAddr"`
+		BuyerDID  string `json:"buyerDID"`
+		SellerDID string `json:"sellerDID"`
+	}
+	if err := json.Unmarshal(body, &authorityResp); err != nil {
+		helperError(w, http.StatusBadGateway, "authority server returned invalid response")
+		return
+	}
+	if authorityResp.UserDID == "" {
+		helperError(w, http.StatusBadGateway, "authority server returned empty userDID")
+		return
+	}
+
+	if err := saveLocalClientState(s.keyDir, localClientState{
+		UserDID:   authorityResp.UserDID,
+		PIMgrAddr: authorityResp.PIMgrAddr,
+		BuyerDID:  authorityResp.BuyerDID,
+		SellerDID: authorityResp.SellerDID,
+		UpdatedAt: nowUTC().UTC().Format(time.RFC3339),
+	}); err != nil {
+		log.Printf("failed to save local client state: %v", err)
+	}
+
+	helperJSON(w, http.StatusOK, apiRegisterResponse{
+		Success:   true,
+		Message:   firstNonEmpty(authorityResp.Message, "identity registered"),
+		UserDID:   authorityResp.UserDID,
+		PIMgrAddr: authorityResp.PIMgrAddr,
+		BuyerDID:  authorityResp.BuyerDID,
+		SellerDID: authorityResp.SellerDID,
+	})
+}
+
+func (s helperServer) apiLoginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	defer r.Body.Close()
+
+	var req signLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helperError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	userDID := strings.TrimSpace(firstNonEmpty(req.UserDID, req.IdentityDID))
+	if userDID == "" {
+		if state, err := loadLocalClientState(s.keyDir); err == nil {
+			userDID = state.UserDID
+		}
+	}
+
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "local private key is not ready; register first")
+		return
+	}
+	loginReq, err := newLoginRequest(userDID, privateKey, nowUTC())
+	if err != nil {
+		helperError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	body, statusCode, err := postJSONToServer(s.loginURL, loginReq)
+	if err != nil {
+		helperError(w, http.StatusBadGateway, "failed to call transaction server")
+		return
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		forwardUpstreamError(w, statusCode, body, "transaction server rejected login")
+		return
+	}
+
+	writeRawJSON(w, http.StatusOK, body)
+}
+
+func (s helperServer) apiAssetRegistrationHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	defer r.Body.Close()
+
+	r.Body = http.MaxBytesReader(w, r.Body, localMaxAssetRequestSize)
+	if err := r.ParseMultipartForm(localMaxAssetRequestSize); err != nil {
+		helperError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+
+	input := AssetRegistrationInput{
+		SessionToken:  firstFormValue(r.MultipartForm, "sessionToken"),
+		IdentityDID:   firstFormValue(r.MultipartForm, "identityDID"),
+		AssetName:     firstFormValue(r.MultipartForm, "assetName"),
+		AssetLocation: firstFormValue(r.MultipartForm, "assetLocation"),
+		Description:   firstFormValue(r.MultipartForm, "description"),
+	}
+
+	photoFile, photoHeader, err := r.FormFile("photo")
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "photo file is required")
+		return
+	}
+	defer photoFile.Close()
+
+	photoBytes, err := io.ReadAll(io.LimitReader(photoFile, localMaxAssetRequestSize+1))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "failed to read photo file")
+		return
+	}
+	if len(photoBytes) == 0 {
+		helperError(w, http.StatusBadRequest, "photo file is empty")
+		return
+	}
+	if len(photoBytes) > localMaxAssetRequestSize {
+		helperError(w, http.StatusBadRequest, "photo file is too large")
+		return
+	}
+
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "local private key is not ready; register first")
+		return
+	}
+
+	payload, err := newAssetRegistrationPayloadFromBytes(input, photoHeader.Filename, photoBytes, privateKey, nowUTC())
+	if err != nil {
+		helperError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	body, statusCode, err := postMultipartToServer(s.assetURL, payload)
+	if err != nil {
+		helperError(w, http.StatusBadGateway, "failed to call transaction server")
+		return
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		forwardUpstreamError(w, statusCode, body, "transaction server rejected asset registration")
+		return
+	}
+
+	var assetResp apiAssetRegistrationResponse
+	if err := json.Unmarshal(body, &assetResp); err != nil {
+		helperError(w, http.StatusBadGateway, "transaction server returned invalid response")
+		return
+	}
+	assetResp.PhotoHash = payload.Fields["photoHash"]
+	helperJSON(w, http.StatusOK, assetResp)
 }
 
 func (s helperServer) signLoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -80,8 +338,14 @@ func (s helperServer) signLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "local private key is not ready; register first")
+		return
+	}
+
 	userDID := strings.TrimSpace(firstNonEmpty(req.UserDID, req.IdentityDID))
-	loginReq, err := newLoginRequest(userDID, s.privateKey, nowUTC())
+	loginReq, err := newLoginRequest(userDID, privateKey, nowUTC())
 	if err != nil {
 		helperError(w, http.StatusBadRequest, err.Error())
 		return
@@ -144,6 +408,12 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "local private key is not ready; register first")
+		return
+	}
+
 	timestamp := nowUTC().UTC().Format(time.RFC3339)
 	credential := buildRegisterAssetCredential(
 		req.IdentityDID,
@@ -154,7 +424,7 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 		timestamp,
 	)
 	digest := sha256.Sum256([]byte(credential))
-	signature, err := ecdsa.SignASN1(rand.Reader, s.privateKey, digest[:])
+	signature, err := ecdsa.SignASN1(rand.Reader, privateKey, digest[:])
 	if err != nil {
 		helperError(w, http.StatusInternalServerError, "failed to sign credential")
 		return
@@ -165,6 +435,121 @@ func (s helperServer) signAssetHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp:   timestamp,
 		Signature:   base64.StdEncoding.EncodeToString(signature),
 	})
+}
+
+func postJSONToServer(url string, payload any) ([]byte, int, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to encode request: %w", err)
+	}
+
+	client := http.Client{Timeout: 45 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return respBody, resp.StatusCode, nil
+}
+
+func postMultipartToServer(url string, payload AssetRegistrationPayload) ([]byte, int, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range payload.Fields {
+		if err := writer.WriteField(name, value); err != nil {
+			return nil, 0, fmt.Errorf("failed to write multipart field %s: %w", name, err)
+		}
+	}
+
+	part, err := writer.CreateFormFile("photo", payload.FileName)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create multipart photo field: %w", err)
+	}
+	if _, err := part.Write(payload.PhotoBytes); err != nil {
+		return nil, 0, fmt.Errorf("failed to write multipart photo: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, 0, fmt.Errorf("failed to close multipart request: %w", err)
+	}
+
+	client := http.Client{Timeout: 75 * time.Second}
+	resp, err := client.Post(url, writer.FormDataContentType(), &body)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return respBody, resp.StatusCode, nil
+}
+
+func saveLocalClientState(keyDir string, state localClientState) error {
+	if err := os.MkdirAll(keyDir, 0700); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(localClientStatePath(keyDir), data, 0600)
+}
+
+func loadLocalClientState(keyDir string) (localClientState, error) {
+	data, err := os.ReadFile(localClientStatePath(keyDir))
+	if err != nil {
+		return localClientState{}, err
+	}
+
+	var state localClientState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return localClientState{}, err
+	}
+
+	return state, nil
+}
+
+func localClientStatePath(keyDir string) string {
+	return filepath.Join(strings.TrimSpace(keyDir), "client_state.json")
+}
+
+func localClientWebDir() string {
+	candidates := []string{
+		os.Getenv("CLIENT_WEB_DIR"),
+		filepath.Join("..", "transaction-server", "web"),
+		filepath.Join("transaction-server", "web"),
+		"web",
+	}
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	return filepath.Join("..", "transaction-server", "web")
+}
+
+func firstFormValue(form *multipart.Form, name string) string {
+	if form == nil || len(form.Value[name]) == 0 {
+		return ""
+	}
+
+	return strings.TrimSpace(form.Value[name][0])
 }
 
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
@@ -189,9 +574,32 @@ func helperJSON(w http.ResponseWriter, statusCode int, value any) {
 	}
 }
 
+func writeRawJSON(w http.ResponseWriter, statusCode int, body []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if _, err := w.Write(body); err != nil {
+		log.Printf("failed to write helper response: %v", err)
+	}
+}
+
 func helperError(w http.ResponseWriter, statusCode int, message string) {
 	helperJSON(w, statusCode, map[string]any{
 		"success": false,
 		"message": message,
 	})
+}
+
+func forwardUpstreamError(w http.ResponseWriter, statusCode int, body []byte, fallback string) {
+	message := fallback
+
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && strings.TrimSpace(payload.Message) != "" {
+		message = strings.TrimSpace(payload.Message)
+	} else if text := strings.TrimSpace(string(body)); text != "" && len(text) < 240 {
+		message = text
+	}
+
+	helperError(w, statusCode, message)
 }

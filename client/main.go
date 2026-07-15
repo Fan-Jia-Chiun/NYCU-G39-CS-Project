@@ -76,7 +76,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "helper":
-		if err := runHelperServer(*helperAddr, *keyDir); err != nil {
+		if err := runHelperServer(*helperAddr, *keyDir, *registerURL, *loginURL, *assetURL); err != nil {
 			log.Printf("helper server failed: %v", err)
 			os.Exit(1)
 		}

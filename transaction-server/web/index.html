@@ -3,38 +3,97 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Property Registration Demo</title>
+    <title>Blockchain-based Property Auction System</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main class="app-shell">
       <header class="topbar">
         <div>
-          <h1>Property Registration Demo</h1>
-          <p>登入、Session 建立與財產註冊展示</p>
+          <h1>Blockchain-based Property Auction System</h1>
+          <p>使用者註冊、登入與財產註冊展示</p>
         </div>
-        <div class="server-pill">Transaction Server :8082</div>
+        <div class="server-pill">Local Client :8090</div>
       </header>
 
-      <section class="panel">
+      <section class="panel compact-panel">
+        <div class="form-grid">
+          <label>
+            Local Client URL
+            <input id="clientURL" type="url" value="http://127.0.0.1:8090" />
+          </label>
+          <label>
+            Current Identity DID
+            <input id="identityDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
+          </label>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="Demo sections">
+        <button class="tab-button active" type="button" data-tab="registerPanel">Register</button>
+        <button class="tab-button" type="button" data-tab="loginPanel">Login / Refresh</button>
+        <button class="tab-button" type="button" data-tab="assetPanel">Register Asset</button>
+      </nav>
+
+      <section id="registerPanel" class="panel tab-panel active">
+        <div class="panel-heading">
+          <h2>使用者註冊</h2>
+          <span id="registerState" class="status-tag idle">Waiting</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            User Name
+            <input id="userName" type="text" value="PropertyOwner01" autocomplete="off" />
+          </label>
+          <label>
+            ID Card Number
+            <input id="idCardNumber" type="text" value="P123456701" autocomplete="off" />
+          </label>
+          <label>
+            Email
+            <input id="email" type="email" value="owner01@example.com" autocomplete="off" />
+          </label>
+          <label>
+            Phone
+            <input id="phone" type="text" value="0911000001" autocomplete="off" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="registerButton" type="button">Register User</button>
+        </div>
+
+        <div class="result-grid">
+          <output>
+            <span>User DID</span>
+            <strong id="registeredUserDID">-</strong>
+          </output>
+          <output>
+            <span>PIMgr Addr</span>
+            <strong id="registeredPIMgrAddr">-</strong>
+          </output>
+          <output>
+            <span>Buyer DID</span>
+            <strong id="registeredBuyerDID">-</strong>
+          </output>
+          <output>
+            <span>Seller DID</span>
+            <strong id="registeredSellerDID">-</strong>
+          </output>
+        </div>
+
+        <pre id="registerResult" class="response-box"></pre>
+      </section>
+
+      <section id="loginPanel" class="panel tab-panel">
         <div class="panel-heading">
           <h2>登入</h2>
           <span id="loginState" class="status-tag idle">Not logged in</span>
         </div>
 
-        <div class="form-grid">
-          <label>
-            Identity DID
-            <input id="identityDID" type="text" autocomplete="off" placeholder="did:nycu-g39:identity:..." />
-          </label>
-          <label>
-            Client Helper URL
-            <input id="helperURL" type="url" value="http://127.0.0.1:8090" />
-          </label>
-        </div>
-
         <div class="actions">
-          <button id="loginButton" type="button">登入並建立 Session</button>
+          <button id="loginButton" type="button">Login / Refresh Session</button>
         </div>
 
         <div class="result-grid">
@@ -64,7 +123,7 @@
         <pre id="loginResult" class="response-box"></pre>
       </section>
 
-      <section class="panel">
+      <section id="assetPanel" class="panel tab-panel">
         <div class="panel-heading">
           <h2>財產註冊</h2>
           <span id="assetState" class="status-tag idle">Waiting</span>

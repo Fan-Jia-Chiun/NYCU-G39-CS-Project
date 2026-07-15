@@ -29,12 +29,26 @@ type AssetRegistrationPayload struct {
 }
 
 func newAssetRegistrationPayload(input AssetRegistrationInput, privateKey *ecdsa.PrivateKey, now time.Time) (AssetRegistrationPayload, error) {
+	input.PhotoPath = strings.TrimSpace(input.PhotoPath)
+	if input.PhotoPath == "" {
+		return AssetRegistrationPayload{}, fmt.Errorf("photo path is required")
+	}
+
+	photoBytes, err := os.ReadFile(input.PhotoPath)
+	if err != nil {
+		return AssetRegistrationPayload{}, fmt.Errorf("failed to read photo: %w", err)
+	}
+
+	return newAssetRegistrationPayloadFromBytes(input, filepath.Base(input.PhotoPath), photoBytes, privateKey, now)
+}
+
+func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName string, photoBytes []byte, privateKey *ecdsa.PrivateKey, now time.Time) (AssetRegistrationPayload, error) {
 	input.SessionToken = strings.TrimSpace(input.SessionToken)
 	input.IdentityDID = strings.TrimSpace(input.IdentityDID)
 	input.AssetName = strings.TrimSpace(input.AssetName)
 	input.AssetLocation = strings.TrimSpace(input.AssetLocation)
 	input.Description = strings.TrimSpace(input.Description)
-	input.PhotoPath = strings.TrimSpace(input.PhotoPath)
+	fileName = strings.TrimSpace(fileName)
 
 	if input.SessionToken == "" {
 		return AssetRegistrationPayload{}, fmt.Errorf("sessionToken is required")
@@ -48,11 +62,14 @@ func newAssetRegistrationPayload(input AssetRegistrationInput, privateKey *ecdsa
 	if input.AssetLocation == "" {
 		return AssetRegistrationPayload{}, fmt.Errorf("assetLocation is required")
 	}
-	if input.PhotoPath == "" {
-		return AssetRegistrationPayload{}, fmt.Errorf("photo path is required")
-	}
 	if privateKey == nil {
 		return AssetRegistrationPayload{}, fmt.Errorf("private key is required")
+	}
+	if len(photoBytes) == 0 {
+		return AssetRegistrationPayload{}, fmt.Errorf("photo file is empty")
+	}
+	if fileName == "" {
+		fileName = "photo.bin"
 	}
 
 	credentialFields := map[string]string{
@@ -65,14 +82,6 @@ func newAssetRegistrationPayload(input AssetRegistrationInput, privateKey *ecdsa
 		if err := validateAssetCredentialField(name, value); err != nil {
 			return AssetRegistrationPayload{}, err
 		}
-	}
-
-	photoBytes, err := os.ReadFile(input.PhotoPath)
-	if err != nil {
-		return AssetRegistrationPayload{}, fmt.Errorf("failed to read photo: %w", err)
-	}
-	if len(photoBytes) == 0 {
-		return AssetRegistrationPayload{}, fmt.Errorf("photo file is empty")
 	}
 
 	photoHash := assetSHA256Hex(photoBytes)
@@ -103,7 +112,7 @@ func newAssetRegistrationPayload(input AssetRegistrationInput, privateKey *ecdsa
 			"signature":     base64.StdEncoding.EncodeToString(signature),
 		},
 		PhotoBytes: photoBytes,
-		FileName:   filepath.Base(input.PhotoPath),
+		FileName:   fileName,
 	}, nil
 }
 

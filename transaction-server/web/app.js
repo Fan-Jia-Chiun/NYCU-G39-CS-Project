@@ -1,13 +1,26 @@
 const state = {
-  userDID: localStorage.getItem("demo.userDID") || "",
-  sessionToken: localStorage.getItem("demo.sessionToken") || "",
-  helperURL: localStorage.getItem("demo.helperURL") || "http://127.0.0.1:8090",
+  userDID: sessionStorage.getItem("demo.userDID") || localStorage.getItem("demo.userDID") || "",
+  sessionToken: sessionStorage.getItem("demo.sessionToken") || "",
+  clientURL: localStorage.getItem("demo.clientURL") || "http://127.0.0.1:8090",
   photoHash: "",
 };
 
 const el = {
+  clientURL: document.querySelector("#clientURL"),
   identityDID: document.querySelector("#identityDID"),
-  helperURL: document.querySelector("#helperURL"),
+  tabButtons: document.querySelectorAll(".tab-button"),
+  tabPanels: document.querySelectorAll(".tab-panel"),
+  userName: document.querySelector("#userName"),
+  idCardNumber: document.querySelector("#idCardNumber"),
+  email: document.querySelector("#email"),
+  phone: document.querySelector("#phone"),
+  registerButton: document.querySelector("#registerButton"),
+  registerState: document.querySelector("#registerState"),
+  registeredUserDID: document.querySelector("#registeredUserDID"),
+  registeredPIMgrAddr: document.querySelector("#registeredPIMgrAddr"),
+  registeredBuyerDID: document.querySelector("#registeredBuyerDID"),
+  registeredSellerDID: document.querySelector("#registeredSellerDID"),
+  registerResult: document.querySelector("#registerResult"),
   loginButton: document.querySelector("#loginButton"),
   loginState: document.querySelector("#loginState"),
   accountStatus: document.querySelector("#accountStatus"),
@@ -34,18 +47,68 @@ const el = {
 init();
 
 function init() {
+  el.clientURL.value = state.clientURL;
   el.identityDID.value = state.userDID;
-  el.helperURL.value = state.helperURL;
   el.sessionToken.value = state.sessionToken;
 
+  el.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => activateTab(button.dataset.tab));
+  });
+  el.registerButton.addEventListener("click", registerUser);
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.photo.addEventListener("change", updatePhotoHash);
-  el.helperURL.addEventListener("change", () => {
-    state.helperURL = normalizeHelperURL(el.helperURL.value);
-    el.helperURL.value = state.helperURL;
-    localStorage.setItem("demo.helperURL", state.helperURL);
+  el.clientURL.addEventListener("change", () => {
+    state.clientURL = normalizeClientURL(el.clientURL.value);
+    el.clientURL.value = state.clientURL;
+    localStorage.setItem("demo.clientURL", state.clientURL);
   });
+  el.identityDID.addEventListener("change", () => {
+    state.userDID = el.identityDID.value.trim();
+    sessionStorage.setItem("demo.userDID", state.userDID);
+    localStorage.setItem("demo.userDID", state.userDID);
+  });
+}
+
+async function registerUser() {
+  const payload = {
+    userName: el.userName.value.trim(),
+    idCardNumber: el.idCardNumber.value.trim(),
+    email: el.email.value.trim(),
+    phone: el.phone.value.trim(),
+  };
+
+  if (!payload.userName || !payload.idCardNumber || !payload.email || !payload.phone) {
+    setStatus(el.registerState, "bad", "Missing fields");
+    renderJSON(el.registerResult, {
+      success: false,
+      message: "userName, idCardNumber, email, and phone are required",
+    });
+    return;
+  }
+
+  setStatus(el.registerState, "busy", "Registering");
+  el.registerButton.disabled = true;
+  try {
+    const response = await postJSON(apiURL("/api/register"), payload);
+    state.userDID = response.userDID || "";
+    sessionStorage.setItem("demo.userDID", state.userDID);
+    localStorage.setItem("demo.userDID", state.userDID);
+
+    el.identityDID.value = state.userDID;
+    el.registeredUserDID.textContent = response.userDID || "-";
+    el.registeredPIMgrAddr.textContent = response.pimgrAddr || "-";
+    el.registeredBuyerDID.textContent = response.buyerDID || "-";
+    el.registeredSellerDID.textContent = response.sellerDID || "-";
+    renderJSON(el.registerResult, response);
+    setStatus(el.registerState, "ok", "Registered");
+    activateTab("loginPanel");
+  } catch (error) {
+    renderJSON(el.registerResult, errorPayload(error));
+    setStatus(el.registerState, "bad", "Failed");
+  } finally {
+    el.registerButton.disabled = false;
+  }
 }
 
 async function login() {
@@ -56,23 +119,16 @@ async function login() {
     return;
   }
 
-  setStatus(el.loginState, "busy", "Signing");
+  setStatus(el.loginState, "busy", "Logging in");
   el.loginButton.disabled = true;
   try {
-    const helperURL = normalizeHelperURL(el.helperURL.value);
-    const signed = await postJSON(`${helperURL}/sign/login`, { identityDID });
+    const response = await postJSON(apiURL("/api/login"), { identityDID });
 
-    setStatus(el.loginState, "busy", "Logging in");
-    const response = await postJSON("/login", {
-      userDID: signed.userDID,
-      timestamp: signed.timestamp,
-      signature: signed.signature,
-    });
-
-    state.userDID = response.userDID;
+    state.userDID = response.userDID || identityDID;
     state.sessionToken = response.sessionToken || "";
+    sessionStorage.setItem("demo.userDID", state.userDID);
+    sessionStorage.setItem("demo.sessionToken", state.sessionToken);
     localStorage.setItem("demo.userDID", state.userDID);
-    localStorage.setItem("demo.sessionToken", state.sessionToken);
 
     el.identityDID.value = state.userDID;
     el.sessionToken.value = state.sessionToken;
@@ -82,6 +138,7 @@ async function login() {
     el.sessionExpiration.textContent = response.sessionExpiresAt || "-";
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
+    activateTab("assetPanel");
   } catch (error) {
     renderJSON(el.loginResult, errorPayload(error));
     setStatus(el.loginState, "bad", "Login failed");
@@ -123,7 +180,7 @@ async function registerAsset() {
     return;
   }
 
-  setStatus(el.assetState, "busy", "Hashing");
+  setStatus(el.assetState, "busy", "Preparing");
   el.registerAssetButton.disabled = true;
   try {
     if (!state.photoHash) {
@@ -133,30 +190,19 @@ async function registerAsset() {
       el.photoName.textContent = file.name;
     }
 
-    const helperURL = normalizeHelperURL(el.helperURL.value);
-    setStatus(el.assetState, "busy", "Signing");
-    const signed = await postJSON(`${helperURL}/sign/register-asset`, {
-      identityDID,
-      assetName,
-      assetLocation,
-      description,
-      photoHash: state.photoHash,
-    });
-
     const form = new FormData();
     form.append("sessionToken", sessionToken);
     form.append("identityDID", identityDID);
     form.append("assetName", assetName);
     form.append("assetLocation", assetLocation);
     form.append("description", description);
-    form.append("timestamp", signed.timestamp);
-    form.append("photoHash", state.photoHash);
-    form.append("signature", signed.signature);
     form.append("photo", file, file.name);
 
     setStatus(el.assetState, "busy", "Registering");
-    const response = await postForm("/assets", form);
+    const response = await postForm(apiURL("/api/assets/register"), form);
 
+    state.photoHash = response.photoHash || state.photoHash;
+    el.photoHash.textContent = state.photoHash || "-";
     el.assetMessage.textContent = response.message || "-";
     el.assetID.textContent = response.assetID || "-";
     el.photoCID.textContent = response.photoCID || "-";
@@ -214,8 +260,21 @@ async function sha256Hex(arrayBuffer) {
   return bytes.map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function normalizeHelperURL(value) {
+function apiURL(path) {
+  return `${normalizeClientURL(el.clientURL.value)}${path}`;
+}
+
+function normalizeClientURL(value) {
   return (value || "http://127.0.0.1:8090").trim().replace(/\/+$/, "");
+}
+
+function activateTab(panelID) {
+  el.tabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === panelID);
+  });
+  el.tabPanels.forEach((panel) => {
+    panel.classList.toggle("active", panel.id === panelID);
+  });
 }
 
 function setStatus(node, kind, text) {
