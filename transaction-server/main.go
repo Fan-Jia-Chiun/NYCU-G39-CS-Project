@@ -42,7 +42,7 @@ func main() {
 	mux.HandleFunc("/trading-identities", registerTradingIdentityHandler(fabricGateway))
 	mux.HandleFunc("/login", loginHandler(fabricGateway, ipfs))
 	mux.HandleFunc("/assets", assetRegistrationHandler(fabricGateway, ipfs))
-	mux.Handle("/", http.FileServer(http.Dir(staticWebDir())))
+	mux.Handle("/", noCacheFileServer(staticWebDir()))
 
 	port := "8082"
 	addr := ":" + port

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -22,4 +23,13 @@ func staticWebDir() string {
 	}
 
 	return filepath.Join("transaction-server", "web")
+}
+
+func noCacheFileServer(dir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(dir))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		fileServer.ServeHTTP(w, r)
+	})
 }

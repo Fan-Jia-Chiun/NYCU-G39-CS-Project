@@ -551,11 +551,16 @@ function renderAssets(assets) {
     el.assetListCount,
     assets,
     [
-      ["Asset Name", (asset) => asset.assetName || "-"],
+      ["Asset Name", (asset) => assetInfoValue(asset, "assetName")],
       ["Asset ID", (asset) => asset.assetID || asset.assetAddr || "-"],
+      ["Legal Status", (asset) => legalStatusLabel(asset.legalStatus)],
+      ["Photo Link", (asset) => assetPhotoLinkNode(asset)],
+      ["Asset Location", (asset) => assetInfoValue(asset, "assetLocation")],
+      ["Registration Time", (asset) => assetRegistrationTimeLabel(assetInfoValue(asset, "registrationTime"))],
+      ["Photo URL", (asset) => assetInfoValue(asset, "photoUrl")],
+      ["Description", (asset) => assetInfoValue(asset, "description")],
       ["Asset Certificate Addr", (asset) => asset.assetAddr || "-"],
       ["AssetInfoAddr / CID", (asset) => asset.assetInfoAddr || "-"],
-      ["Legal Status", (asset) => legalStatusLabel(asset.legalStatus)],
     ],
     "No assets",
   );
@@ -622,7 +627,12 @@ function renderTable(container, countNode, rows, columns, emptyText) {
     const tr = document.createElement("tr");
     columns.forEach(([, readValue]) => {
       const td = document.createElement("td");
-      td.textContent = displayValue(readValue(row));
+      const value = readValue(row);
+      if (value instanceof Node) {
+        td.append(value);
+      } else {
+        td.textContent = displayValue(value);
+      }
       tr.append(td);
     });
     tbody.append(tr);
@@ -630,6 +640,67 @@ function renderTable(container, countNode, rows, columns, emptyText) {
 
   table.append(thead, tbody);
   container.append(table);
+}
+
+function assetPhotoLinkNode(asset) {
+  const photoURL =
+    asset.photoGatewayUrl ||
+    asset.photoGatewayURL ||
+    ipfsGatewayURL(asset.photoCID || assetInfoValue(asset, "photoUrl") || asset.photoUrl);
+  if (!photoURL) {
+    return document.createTextNode("-");
+  }
+
+  const link = document.createElement("a");
+  link.className = "asset-photo-link";
+  link.href = photoURL;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "click";
+
+  return link;
+}
+
+function assetInfoValue(asset, field) {
+  return asset.assetInfo?.[field] ?? asset[field] ?? "";
+}
+
+function ipfsGatewayURL(value) {
+  const cid = normalizeIPFSCID(value);
+  if (!cid) {
+    return "";
+  }
+
+  return `http://127.0.0.1:8080/ipfs/${encodeURIComponent(cid)}`;
+}
+
+function normalizeIPFSCID(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^ipfs:\/\//, "")
+    .replace(/^\/ipfs\//, "");
+}
+
+function assetRegistrationTimeLabel(value) {
+  if (!value || typeof value !== "object") {
+    return "-";
+  }
+
+  const year = Number(value.year || 0);
+  const month = Number(value.month || 0);
+  const day = Number(value.day || 0);
+  const hour = Number(value.hour || 0);
+  const minute = Number(value.minute || 0);
+  const second = Number(value.second || 0);
+  if (!year || !month || !day) {
+    return "-";
+  }
+
+  return `${year}/${pad2(month)}/${pad2(day)} ${pad2(hour)}:${pad2(minute)}:${pad2(second)} UTC`;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }
 
 function displayValue(value) {

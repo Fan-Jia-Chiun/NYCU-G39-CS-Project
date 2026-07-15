@@ -14,6 +14,7 @@ import (
 )
 
 const defaultIPFSEndpoint = "http://127.0.0.1:5001"
+const defaultIPFSGatewayEndpoint = "http://127.0.0.1:8080"
 
 type ipfsClient struct {
 	endpoint string
@@ -115,4 +116,18 @@ func normalizeIPFSCID(value string) string {
 	value = strings.TrimPrefix(value, "/ipfs/")
 
 	return value
+}
+
+func ipfsGatewayURL(cid string) string {
+	cid = normalizeIPFSCID(cid)
+	if cid == "" {
+		return ""
+	}
+
+	gatewayEndpoint := strings.TrimRight(strings.TrimSpace(envOrDefault("IPFS_GATEWAY_ENDPOINT", defaultIPFSGatewayEndpoint)), "/")
+	if gatewayEndpoint == "" {
+		return ""
+	}
+
+	return gatewayEndpoint + "/ipfs/" + cid
 }

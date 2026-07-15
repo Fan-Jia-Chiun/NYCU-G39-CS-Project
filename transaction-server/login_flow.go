@@ -57,11 +57,18 @@ type CreditScores struct {
 }
 
 type AssetLoginInfo struct {
-	AssetName     string `json:"assetName"`
-	AssetID       string `json:"assetID"`
-	AssetAddr     string `json:"assetAddr"`
-	AssetInfoAddr string `json:"assetInfoAddr"`
-	LegalStatus   int    `json:"legalStatus"`
+	AssetName        string    `json:"assetName"`
+	AssetLocation    string    `json:"assetLocation"`
+	RegistrationTime TimeInfo  `json:"registrationTime"`
+	Description      string    `json:"description"`
+	AssetInfo        AssetInfo `json:"assetInfo"`
+	AssetID          string    `json:"assetID"`
+	AssetAddr        string    `json:"assetAddr"`
+	AssetInfoAddr    string    `json:"assetInfoAddr"`
+	PhotoURL         string    `json:"photoUrl"`
+	PhotoCID         string    `json:"photoCID"`
+	PhotoGatewayURL  string    `json:"photoGatewayUrl"`
+	LegalStatus      int       `json:"legalStatus"`
 }
 
 type TradeLoginInfo struct {
@@ -347,13 +354,21 @@ func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID s
 		if err != nil {
 			return nil, err
 		}
-		assetName := readAssetNameFromIPFS(ipfs, cert.AssetInfoAddr)
+		assetInfo := readAssetInfoFromIPFS(ipfs, cert.AssetInfoAddr)
+		photoCID := normalizeIPFSCID(assetInfo.PhotoURL)
 		assets = append(assets, AssetLoginInfo{
-			AssetName:     assetName,
-			AssetID:       cert.AssetID,
-			AssetAddr:     assetAddr,
-			AssetInfoAddr: cert.AssetInfoAddr,
-			LegalStatus:   status,
+			AssetName:        assetInfo.AssetName,
+			AssetLocation:    assetInfo.AssetLocation,
+			RegistrationTime: assetInfo.RegistrationTime,
+			Description:      assetInfo.Description,
+			AssetInfo:        assetInfo,
+			AssetID:          cert.AssetID,
+			AssetAddr:        assetAddr,
+			AssetInfoAddr:    cert.AssetInfoAddr,
+			PhotoURL:         assetInfo.PhotoURL,
+			PhotoCID:         photoCID,
+			PhotoGatewayURL:  ipfsGatewayURL(photoCID),
+			LegalStatus:      status,
 		})
 	}
 
@@ -361,11 +376,15 @@ func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID s
 }
 
 func readAssetNameFromIPFS(ipfs ipfsReader, assetInfoAddr string) string {
-	if cachedName := getCachedAssetInfoName(assetInfoAddr); cachedName != "" {
-		return cachedName
+	return readAssetInfoFromIPFS(ipfs, assetInfoAddr).AssetName
+}
+
+func readAssetInfoFromIPFS(ipfs ipfsReader, assetInfoAddr string) AssetInfo {
+	if cachedInfo, ok := getCachedAssetInfo(assetInfoAddr); ok {
+		return cachedInfo
 	}
 	if ipfs == nil || strings.TrimSpace(assetInfoAddr) == "" {
-		return ""
+		return AssetInfo{}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -374,19 +393,20 @@ func readAssetNameFromIPFS(ipfs ipfsReader, assetInfoAddr string) string {
 	data, err := ipfs.Cat(ctx, assetInfoAddr)
 	if err != nil {
 		log.Printf("failed to read asset info from IPFS %s: %v", assetInfoAddr, err)
-		return ""
+		return AssetInfo{}
 	}
 
 	var info AssetInfo
 	if err := json.Unmarshal(data, &info); err != nil {
 		log.Printf("failed to decode asset info from IPFS %s: %v", assetInfoAddr, err)
-		return ""
+		return AssetInfo{}
 	}
 
-	assetName := strings.TrimSpace(info.AssetName)
-	cacheAssetInfoName(assetInfoAddr, assetName)
+	info.AssetName = strings.TrimSpace(info.AssetName)
+	info.PhotoURL = strings.TrimSpace(info.PhotoURL)
+	cacheAssetInfo(assetInfoAddr, info)
 
-	return assetName
+	return info
 }
 
 func evaluateUserTrades(fabricGateway *FabricGateway, userDID string) ([]TradeLoginInfo, []TradeLoginInfo, error) {

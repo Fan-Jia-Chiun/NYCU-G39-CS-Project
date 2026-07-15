@@ -251,10 +251,24 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 				},
 				Assets: []AssetLoginInfo{
 					{
-						AssetID:       "asset-1",
-						AssetAddr:     "ASSET_CERT:asset-1",
-						AssetInfoAddr: "QmAssetInfo",
-						LegalStatus:   0,
+						AssetName:        "House",
+						AssetLocation:    "Taipei",
+						RegistrationTime: TimeInfo{Year: 2026, Month: 7, Day: 15, Hour: 8, Minute: 30, Second: 0},
+						Description:      "Demo property",
+						AssetInfo: AssetInfo{
+							AssetName:        "House",
+							AssetLocation:    "Taipei",
+							RegistrationTime: TimeInfo{Year: 2026, Month: 7, Day: 15, Hour: 8, Minute: 30, Second: 0},
+							PhotoURL:         "ipfs://QmPhoto",
+							Description:      "Demo property",
+						},
+						AssetID:         "asset-1",
+						AssetAddr:       "ASSET_CERT:asset-1",
+						AssetInfoAddr:   "QmAssetInfo",
+						PhotoURL:        "ipfs://QmPhoto",
+						PhotoCID:        "QmPhoto",
+						PhotoGatewayURL: "http://127.0.0.1:8080/ipfs/QmPhoto",
+						LegalStatus:     0,
 					},
 				},
 				ActiveTrades: []TradeLoginInfo{
@@ -300,7 +314,22 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 	if got.CreditScores.BuyerCreditScore != 80 || got.CreditScores.SellerCreditScore != 90 {
 		t.Fatalf("credit scores = %+v", got.CreditScores)
 	}
-	if len(got.Assets) != 1 || got.Assets[0].AssetID != "asset-1" || got.Assets[0].AssetInfoAddr != "QmAssetInfo" || got.Assets[0].LegalStatus != 0 {
+	if len(got.Assets) != 1 ||
+		got.Assets[0].AssetName != "House" ||
+		got.Assets[0].AssetLocation != "Taipei" ||
+		got.Assets[0].RegistrationTime.Year != 2026 ||
+		got.Assets[0].Description != "Demo property" ||
+		got.Assets[0].AssetInfo.AssetName != "House" ||
+		got.Assets[0].AssetInfo.AssetLocation != "Taipei" ||
+		got.Assets[0].AssetInfo.RegistrationTime.Year != 2026 ||
+		got.Assets[0].AssetInfo.PhotoURL != "ipfs://QmPhoto" ||
+		got.Assets[0].AssetInfo.Description != "Demo property" ||
+		got.Assets[0].AssetID != "asset-1" ||
+		got.Assets[0].AssetInfoAddr != "QmAssetInfo" ||
+		got.Assets[0].PhotoURL != "ipfs://QmPhoto" ||
+		got.Assets[0].PhotoCID != "QmPhoto" ||
+		got.Assets[0].PhotoGatewayURL != "http://127.0.0.1:8080/ipfs/QmPhoto" ||
+		got.Assets[0].LegalStatus != 0 {
 		t.Fatalf("assets = %+v", got.Assets)
 	}
 	if len(got.ActiveTrades) != 1 || got.ActiveTrades[0].TradeID != 7 {
