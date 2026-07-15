@@ -250,7 +250,12 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 					SellerCreditScore: 90,
 				},
 				Assets: []AssetLoginInfo{
-					{AssetAddr: "ASSET_CERT:asset-1", LegalStatus: 0},
+					{
+						AssetID:       "asset-1",
+						AssetAddr:     "ASSET_CERT:asset-1",
+						AssetInfoAddr: "QmAssetInfo",
+						LegalStatus:   0,
+					},
 				},
 				ActiveTrades: []TradeLoginInfo{
 					{
@@ -295,7 +300,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 	if got.CreditScores.BuyerCreditScore != 80 || got.CreditScores.SellerCreditScore != 90 {
 		t.Fatalf("credit scores = %+v", got.CreditScores)
 	}
-	if len(got.Assets) != 1 || got.Assets[0].LegalStatus != 0 {
+	if len(got.Assets) != 1 || got.Assets[0].AssetID != "asset-1" || got.Assets[0].AssetInfoAddr != "QmAssetInfo" || got.Assets[0].LegalStatus != 0 {
 		t.Fatalf("assets = %+v", got.Assets)
 	}
 	if len(got.ActiveTrades) != 1 || got.ActiveTrades[0].TradeID != 7 {

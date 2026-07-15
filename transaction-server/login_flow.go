@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -56,8 +57,11 @@ type CreditScores struct {
 }
 
 type AssetLoginInfo struct {
-	AssetAddr   string `json:"assetAddr"`
-	LegalStatus int    `json:"legalStatus"`
+	AssetName     string `json:"assetName"`
+	AssetID       string `json:"assetID"`
+	AssetAddr     string `json:"assetAddr"`
+	AssetInfoAddr string `json:"assetInfoAddr"`
+	LegalStatus   int    `json:"legalStatus"`
 }
 
 type TradeLoginInfo struct {
@@ -90,6 +94,12 @@ type TradingIdentityRecord struct {
 	SellerCreditScore uint   `json:"sellerCreditScore"`
 }
 
+type AssetCertificateRecord struct {
+	AssetID       string `json:"assetID"`
+	AssetInfoAddr string `json:"assetInfoAddr"`
+	LegalStatus   int    `json:"legalStatus"`
+}
+
 type LoginInitializationData struct {
 	BuyerDID                  string
 	SellerDID                 string
@@ -103,10 +113,13 @@ type LoginInitializationData struct {
 
 type publicKeyResolver func(userDID string) (string, error)
 type loginInitializer func(userDID string) (*LoginInitializationData, error)
+type ipfsReader interface {
+	Cat(ctx context.Context, cid string) ([]byte, error)
+}
 
 var currentActiveTransactionCache = []TradeInfo{}
 
-func loginHandler(fabricGateway *FabricGateway) http.HandlerFunc {
+func loginHandler(fabricGateway *FabricGateway, ipfs ipfsReader) http.HandlerFunc {
 	return loginHandlerWithDependencies(
 		func(userDID string) (string, error) {
 			result, err := fabricGateway.Contract.EvaluateTransaction("GetPublicKey", userDID)
@@ -116,7 +129,7 @@ func loginHandler(fabricGateway *FabricGateway) http.HandlerFunc {
 			return string(result), nil
 		},
 		func(userDID string) (*LoginInitializationData, error) {
-			return loadLoginInitialization(fabricGateway, userDID)
+			return loadLoginInitialization(fabricGateway, ipfs, userDID)
 		},
 	)
 }
@@ -238,7 +251,7 @@ func emptyLoginInitialization(userDID string) (*LoginInitializationData, error) 
 	}, nil
 }
 
-func loadLoginInitialization(fabricGateway *FabricGateway, userDID string) (*LoginInitializationData, error) {
+func loadLoginInitialization(fabricGateway *FabricGateway, ipfs ipfsReader, userDID string) (*LoginInitializationData, error) {
 	tradingIdentity, err := evaluateTradingIdentity(fabricGateway, userDID)
 	if err != nil {
 		return nil, newLoginDataError(http.StatusBadGateway, "failed to query trading identity", err)
@@ -250,7 +263,7 @@ func loadLoginInitialization(fabricGateway *FabricGateway, userDID string) (*Log
 		return nil, newLoginDataError(http.StatusForbidden, identityStatusMessage(tradingIdentity.AccountStatus), nil)
 	}
 
-	assets, err := evaluateUserAssets(fabricGateway, userDID)
+	assets, err := evaluateUserAssets(fabricGateway, ipfs, userDID)
 	if err != nil {
 		return nil, newLoginDataError(http.StatusBadGateway, "failed to query user assets", err)
 	}
@@ -306,7 +319,7 @@ func evaluateCreditScores(fabricGateway *FabricGateway, userDID string) (CreditS
 	return scores, nil
 }
 
-func evaluateUserAssets(fabricGateway *FabricGateway, userDID string) ([]AssetLoginInfo, error) {
+func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID string) ([]AssetLoginInfo, error) {
 	var assetAddrs []string
 	if err := evaluateJSON(fabricGateway, &assetAddrs, "GetAssetList", userDID); err != nil {
 		return nil, err
@@ -322,17 +335,58 @@ func evaluateUserAssets(fabricGateway *FabricGateway, userDID string) ([]AssetLo
 			continue
 		}
 
+		var cert AssetCertificateRecord
+		if err := evaluateJSON(fabricGateway, &cert, "GetAssetCertificate", assetAddr); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(cert.AssetID) == "" {
+			cert.AssetID = strings.TrimPrefix(assetAddr, "ASSET_CERT:")
+		}
+
 		status, err := evaluateInt(fabricGateway, "CheckStatus", assetAddr)
 		if err != nil {
 			return nil, err
 		}
+		assetName := readAssetNameFromIPFS(ipfs, cert.AssetInfoAddr)
 		assets = append(assets, AssetLoginInfo{
-			AssetAddr:   assetAddr,
-			LegalStatus: status,
+			AssetName:     assetName,
+			AssetID:       cert.AssetID,
+			AssetAddr:     assetAddr,
+			AssetInfoAddr: cert.AssetInfoAddr,
+			LegalStatus:   status,
 		})
 	}
 
 	return assets, nil
+}
+
+func readAssetNameFromIPFS(ipfs ipfsReader, assetInfoAddr string) string {
+	if cachedName := getCachedAssetInfoName(assetInfoAddr); cachedName != "" {
+		return cachedName
+	}
+	if ipfs == nil || strings.TrimSpace(assetInfoAddr) == "" {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	data, err := ipfs.Cat(ctx, assetInfoAddr)
+	if err != nil {
+		log.Printf("failed to read asset info from IPFS %s: %v", assetInfoAddr, err)
+		return ""
+	}
+
+	var info AssetInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		log.Printf("failed to decode asset info from IPFS %s: %v", assetInfoAddr, err)
+		return ""
+	}
+
+	assetName := strings.TrimSpace(info.AssetName)
+	cacheAssetInfoName(assetInfoAddr, assetName)
+
+	return assetName
 }
 
 func evaluateUserTrades(fabricGateway *FabricGateway, userDID string) ([]TradeLoginInfo, []TradeLoginInfo, error) {

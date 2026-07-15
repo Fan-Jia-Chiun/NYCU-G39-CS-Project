@@ -184,6 +184,7 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 			writeLoginError(w, http.StatusBadGateway, "failed to upload asset info")
 			return
 		}
+		cacheAssetInfoName(assetInfoAddr, assetInfo.AssetName)
 
 		assetID, assetAddr, err := registerAssetOnChain(fabricGateway, assetInfoAddr, req.IdentityDID)
 		if err != nil {

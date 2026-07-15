@@ -318,6 +318,88 @@ code {
   white-space: pre-wrap;
 }
 
+.login-data-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.data-section {
+  min-width: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.count-pill {
+  min-width: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  background: #fff;
+}
+
+.record-list {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.record-list.empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.record-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.record-table th,
+.record-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.record-table th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  background: #f2f6f9;
+}
+
+.record-table td {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.record-table tr:last-child td {
+  border-bottom: 0;
+}
+
 @media (max-width: 760px) {
   .topbar,
   .panel-heading {

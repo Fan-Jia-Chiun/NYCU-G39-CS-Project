@@ -38,6 +38,14 @@ const el = {
   verifiedSellerDID: document.querySelector("#verifiedSellerDID"),
   sessionExpiration: document.querySelector("#sessionExpiration"),
   sessionToken: document.querySelector("#sessionToken"),
+  assetList: document.querySelector("#assetList"),
+  assetListCount: document.querySelector("#assetListCount"),
+  currentTransactionList: document.querySelector("#currentTransactionList"),
+  currentTransactionCount: document.querySelector("#currentTransactionCount"),
+  activeTradeList: document.querySelector("#activeTradeList"),
+  activeTradeCount: document.querySelector("#activeTradeCount"),
+  historicalTradeList: document.querySelector("#historicalTradeList"),
+  historicalTradeCount: document.querySelector("#historicalTradeCount"),
   loginResult: document.querySelector("#loginResult"),
   assetName: document.querySelector("#assetName"),
   assetLocation: document.querySelector("#assetLocation"),
@@ -61,6 +69,7 @@ function init() {
   el.identityDID.value = state.identityDID;
   el.sessionToken.value = state.sessionToken;
   renderCachedDIDs("cache not loaded");
+  renderLoginInitialization({});
 
   el.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
@@ -231,6 +240,7 @@ async function login() {
     renderValueWithNote(el.sessionExpiration, formatTaipeiDateTime(response.expiresAt || response.sessionExpiresAt), "UTC+8");
     el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
     renderCachedDIDs("synced from verified login");
+    renderLoginInitialization(response);
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
   } catch (error) {
@@ -445,4 +455,179 @@ function renderAccountStatus(status) {
   }
 
   renderValueWithNote(el.accountStatus, status ?? "-", "");
+}
+
+function renderLoginInitialization(response) {
+  renderAssets(response.assets || []);
+  renderTradeInfoList(
+    el.currentTransactionList,
+    el.currentTransactionCount,
+    response.currentActiveTransactions || [],
+    "No available active transactions",
+  );
+  renderUserTrades(
+    el.activeTradeList,
+    el.activeTradeCount,
+    response.activeTrades || [],
+    "No active trades",
+  );
+  renderUserTrades(
+    el.historicalTradeList,
+    el.historicalTradeCount,
+    response.historicalTrades || [],
+    "No historical trades",
+  );
+}
+
+function renderAssets(assets) {
+  renderTable(
+    el.assetList,
+    el.assetListCount,
+    assets,
+    [
+      ["Asset Name", (asset) => asset.assetName || "-"],
+      ["Asset ID", (asset) => asset.assetID || asset.assetAddr || "-"],
+      ["Asset Certificate Addr", (asset) => asset.assetAddr || "-"],
+      ["AssetInfoAddr / CID", (asset) => asset.assetInfoAddr || "-"],
+      ["Legal Status", (asset) => legalStatusLabel(asset.legalStatus)],
+    ],
+    "No assets",
+  );
+}
+
+function renderTradeInfoList(container, countNode, trades, emptyText) {
+  renderTable(
+    container,
+    countNode,
+    trades,
+    [
+      ["Trade ID", (trade) => displayValue(trade.tradeID)],
+      ["Asset ID", (trade) => trade.assetID || "-"],
+      ["Status", (trade) => transactionStatusLabel(trade.transactionStatus)],
+      ["Mode", (trade) => transactionModeLabel(trade.transactionMode)],
+      ["Current Highest Price", (trade) => displayValue(trade.currentHighestPrice)],
+    ],
+    emptyText,
+  );
+}
+
+function renderUserTrades(container, countNode, trades, emptyText) {
+  renderTable(
+    container,
+    countNode,
+    trades,
+    [
+      ["Trade ID", (trade) => displayValue(trade.tradeID)],
+      ["Role", (trade) => transactionRoleLabel(trade.transactionRole)],
+      ["Active", (trade) => activeFlagLabel(trade.isActive)],
+      ["Asset ID", (trade) => trade.tradeInfo?.assetID || "-"],
+      ["Status", (trade) => transactionStatusLabel(trade.tradeInfo?.transactionStatus)],
+      ["Mode", (trade) => transactionModeLabel(trade.tradeInfo?.transactionMode)],
+      ["Current Highest Price", (trade) => displayValue(trade.tradeInfo?.currentHighestPrice)],
+    ],
+    emptyText,
+  );
+}
+
+function renderTable(container, countNode, rows, columns, emptyText) {
+  countNode.textContent = String(rows.length);
+  container.textContent = "";
+  container.classList.toggle("empty", rows.length === 0);
+
+  if (rows.length === 0) {
+    container.textContent = emptyText;
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "record-table";
+
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  columns.forEach(([label]) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headerRow.append(th);
+  });
+  thead.append(headerRow);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    columns.forEach(([, readValue]) => {
+      const td = document.createElement("td");
+      td.textContent = displayValue(readValue(row));
+      tr.append(td);
+    });
+    tbody.append(tr);
+  });
+
+  table.append(thead, tbody);
+  container.append(table);
+}
+
+function displayValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  return String(value);
+}
+
+function legalStatusLabel(status) {
+  if (status === 0) {
+    return "Normal (code 0)";
+  }
+
+  return `Unknown (code ${displayValue(status)})`;
+}
+
+function transactionRoleLabel(role) {
+  if (role === 0) {
+    return "Buyer / code 0";
+  }
+  if (role === 1) {
+    return "Seller / code 1";
+  }
+  if (role === 2) {
+    return "Participant / code 2";
+  }
+
+  return `Code ${displayValue(role)}`;
+}
+
+function activeFlagLabel(isActive) {
+  if (isActive === true) {
+    return "Active";
+  }
+  if (isActive === false) {
+    return "Inactive";
+  }
+
+  return "-";
+}
+
+function transactionStatusLabel(status) {
+  const labels = {
+    5: "Completed / code 5",
+    6: "Cancelled / code 6",
+    9: "Returned / code 9",
+    10: "Rejected / code 10",
+  };
+  if (Object.hasOwn(labels, status)) {
+    return labels[status];
+  }
+  if (status === null || status === undefined || status === "") {
+    return "-";
+  }
+
+  return `Active status / code ${status}`;
+}
+
+function transactionModeLabel(mode) {
+  if (mode === null || mode === undefined || mode === "") {
+    return "-";
+  }
+
+  return `Mode code ${mode}`;
 }

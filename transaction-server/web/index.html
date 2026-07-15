@@ -110,7 +110,7 @@
 
       <section id="loginPanel" class="panel tab-panel">
         <div class="panel-heading">
-          <h2>登入</h2>
+          <h2>Log in</h2>
           <span id="loginState" class="status-tag idle">Not logged in</span>
         </div>
 
@@ -149,6 +149,40 @@
           Session Token
           <textarea id="sessionToken" rows="2" readonly></textarea>
         </label>
+
+        <div class="login-data-grid">
+          <section class="data-section">
+            <div class="section-title">
+              <h3>Owned Assets</h3>
+              <span id="assetListCount" class="count-pill">0</span>
+            </div>
+            <div id="assetList" class="record-list empty">No assets</div>
+          </section>
+
+          <section class="data-section">
+            <div class="section-title">
+              <h3>Available Transactions</h3>
+              <span id="currentTransactionCount" class="count-pill">0</span>
+            </div>
+            <div id="currentTransactionList" class="record-list empty">No available active transactions</div>
+          </section>
+
+          <section class="data-section">
+            <div class="section-title">
+              <h3>Active Transactions</h3>
+              <span id="activeTradeCount" class="count-pill">0</span>
+            </div>
+            <div id="activeTradeList" class="record-list empty">No active trades</div>
+          </section>
+
+          <section class="data-section">
+            <div class="section-title">
+              <h3>Transaction History</h3>
+              <span id="historicalTradeCount" class="count-pill">0</span>
+            </div>
+            <div id="historicalTradeList" class="record-list empty">No historical trades</div>
+          </section>
+        </div>
 
         <pre id="loginResult" class="response-box"></pre>
       </section>

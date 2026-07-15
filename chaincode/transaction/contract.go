@@ -327,6 +327,16 @@ func (c *TransactionIdentityRegistryContract) CheckStatus(ctx contractapi.Transa
 	return cert.LegalStatus, nil
 }
 
+// GetAssetCertificate returns an asset certificate by certificate address.
+// Input: asset certificate address. Output: asset certificate.
+func (c *TransactionIdentityRegistryContract) GetAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr string) (*AssetCertificate, error) {
+	if err := requireAnyRole(ctx, roleTransactionService, roleVerifier); err != nil {
+		return nil, err
+	}
+
+	return getAssetCertificate(ctx, assetAddr)
+}
+
 // GetTradeInfo returns the current state of a trade.
 // Input: tradeID. Output: trade info.
 func (c *TransactionIdentityRegistryContract) GetTradeInfo(ctx contractapi.TransactionContextInterface, tradeID uint) (*TradeInfo, error) {

@@ -40,7 +40,7 @@ func main() {
 	mux.HandleFunc("/health", runningHandler)
 	mux.HandleFunc("/transaction", transactionHandler)
 	mux.HandleFunc("/trading-identities", registerTradingIdentityHandler(fabricGateway))
-	mux.HandleFunc("/login", loginHandler(fabricGateway))
+	mux.HandleFunc("/login", loginHandler(fabricGateway, ipfs))
 	mux.HandleFunc("/assets", assetRegistrationHandler(fabricGateway, ipfs))
 	mux.Handle("/", http.FileServer(http.Dir(staticWebDir())))
 

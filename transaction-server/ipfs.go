@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -78,4 +79,40 @@ func (c *ipfsClient) Add(ctx context.Context, fileName string, data []byte) (str
 	}
 
 	return result.Hash, nil
+}
+
+func (c *ipfsClient) Cat(ctx context.Context, cid string) ([]byte, error) {
+	cid = normalizeIPFSCID(cid)
+	if cid == "" {
+		return nil, fmt.Errorf("IPFS CID is required")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/api/v0/cat?arg="+url.QueryEscape(cid), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build IPFS cat request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call IPFS cat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read IPFS cat response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("IPFS cat returned %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
+	}
+
+	return respBody, nil
+}
+
+func normalizeIPFSCID(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "ipfs://")
+	value = strings.TrimPrefix(value, "/ipfs/")
+
+	return value
 }
