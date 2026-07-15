@@ -11,6 +11,8 @@ const el = {
   clientURL: document.querySelector("#clientURL"),
   identityDID: document.querySelector("#identityDID"),
   loadIdentityButton: document.querySelector("#loadIdentityButton"),
+  saveIdentityButton: document.querySelector("#saveIdentityButton"),
+  saveIdentityFolderButton: document.querySelector("#saveIdentityFolderButton"),
   identityFile: document.querySelector("#identityFile"),
   identityCacheState: document.querySelector("#identityCacheState"),
   identityPath: document.querySelector("#identityPath"),
@@ -79,6 +81,8 @@ function init() {
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.photo.addEventListener("change", updatePhotoHash);
   el.loadIdentityButton.addEventListener("click", readIdentity);
+  el.saveIdentityButton.addEventListener("click", saveIdentity);
+  el.saveIdentityFolderButton.addEventListener("click", saveIdentityToFolder);
   el.identityFile.addEventListener("change", markSelectedIdentityFile);
   el.clientURL.addEventListener("change", () => {
     state.clientURL = normalizeClientURL(el.clientURL.value);
@@ -198,7 +202,7 @@ async function registerUser() {
     el.registeredBuyerDID.textContent = response.buyerDID || "-";
     el.registeredSellerDID.textContent = response.sellerDID || "-";
     el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
-    renderCachedDIDs("saved local cache, not login-verified");
+    renderCachedDIDs("ready to save, not login-verified");
     renderJSON(el.registerResult, response);
     setStatus(el.registerState, "ok", "Registered");
     activateTab("loginPanel");
@@ -239,7 +243,7 @@ async function login() {
     el.verifiedSellerDID.textContent = response.sellerDID || "-";
     renderValueWithNote(el.sessionExpiration, formatTaipeiDateTime(response.expiresAt || response.sessionExpiresAt), "UTC+8");
     el.identityPath.textContent = response.identityPath || el.identityPath.textContent || "-";
-    renderCachedDIDs("synced from verified login");
+    renderCachedDIDs("synced from verified login, ready to save");
     renderLoginInitialization(response);
     renderJSON(el.loginResult, response);
     setStatus(el.loginState, "ok", "Logged in");
@@ -249,6 +253,68 @@ async function login() {
   } finally {
     el.loginButton.disabled = false;
   }
+}
+
+async function saveIdentity() {
+  const payload = currentIdentityPayload();
+  if (!payload.identityDID) {
+    setStatus(el.identityCacheState, "bad", "Missing DID");
+    return;
+  }
+
+  setStatus(el.identityCacheState, "busy", "Saving identity.json");
+  try {
+    const response = await postJSON(apiURL("/api/identity"), payload);
+    applyIdentityCache(response, "saved to identity.json");
+    if (response.identityPath) {
+      el.identityPath.textContent = response.identityPath;
+    }
+    setStatus(el.identityCacheState, "ok", "identity.json saved");
+  } catch (error) {
+    setStatus(el.identityCacheState, "bad", "Save failed");
+  }
+}
+
+async function saveIdentityToFolder() {
+  const payload = currentIdentityPayload();
+  if (!payload.identityDID) {
+    setStatus(el.identityCacheState, "bad", "Missing DID");
+    return;
+  }
+  if (!window.showDirectoryPicker) {
+    setStatus(el.identityCacheState, "bad", "Folder picker unavailable");
+    return;
+  }
+
+  setStatus(el.identityCacheState, "busy", "Choosing folder");
+  try {
+    const directory = await window.showDirectoryPicker({ mode: "readwrite" });
+    const file = await directory.getFileHandle("identity.json", { create: true });
+    const writable = await file.createWritable();
+    await writable.write(JSON.stringify(payload, null, 2) + "\n");
+    await writable.close();
+
+    renderValueWithNote(el.identityPath, `Selected folder: ${directory.name}`, "identity.json saved");
+    renderCachedDIDs("saved to selected folder");
+    setStatus(el.identityCacheState, "ok", "identity.json saved");
+  } catch (error) {
+    if (error.name === "AbortError") {
+      setStatus(el.identityCacheState, "idle", "Save cancelled");
+      return;
+    }
+    setStatus(el.identityCacheState, "bad", "Folder save failed");
+  }
+}
+
+function currentIdentityPayload() {
+  state.identityDID = el.identityDID.value.trim() || state.identityDID;
+  sessionStorage.setItem("demo.identityDID", state.identityDID);
+
+  return {
+    identityDID: state.identityDID,
+    buyerDID: state.buyerDID || "",
+    sellerDID: state.sellerDID || "",
+  };
 }
 
 async function updatePhotoHash() {

@@ -92,6 +92,13 @@ type apiIdentityResponse struct {
 	Message      string `json:"message,omitempty"`
 }
 
+type apiSaveIdentityRequest struct {
+	IdentityDID string `json:"identityDID"`
+	UserDID     string `json:"userDID,omitempty"`
+	BuyerDID    string `json:"buyerDID,omitempty"`
+	SellerDID   string `json:"sellerDID,omitempty"`
+}
+
 func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string) error {
 	server := helperServer{
 		keyDir:      strings.TrimSpace(keyDir),
@@ -134,11 +141,17 @@ func (s helperServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s helperServer) apiIdentityHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		s.readIdentityCacheHandler(w, r)
+	case http.MethodPost:
+		s.saveIdentityCacheHandler(w, r)
+	default:
 		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
 	}
+}
 
+func (s helperServer) readIdentityCacheHandler(w http.ResponseWriter, r *http.Request) {
 	identityPath, pathErr := defaultIdentityStoreDisplayPath()
 	if pathErr != nil {
 		log.Printf("failed to resolve local identity cache path: %v", pathErr)
@@ -173,6 +186,47 @@ func (s helperServer) apiIdentityHandler(w http.ResponseWriter, r *http.Request)
 		SellerDID:    cache.SellerDID,
 		IdentityPath: identityPath,
 		Message:      "loaded local identity cache",
+	})
+}
+
+func (s helperServer) saveIdentityCacheHandler(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	var req apiSaveIdentityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helperError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	identityDID := strings.TrimSpace(firstNonEmpty(req.IdentityDID, req.UserDID))
+	if identityDID == "" {
+		helperError(w, http.StatusBadRequest, "identityDID is required")
+		return
+	}
+
+	if err := saveLocalIdentityCache(localIdentityCache{
+		IdentityDID: identityDID,
+		BuyerDID:    strings.TrimSpace(req.BuyerDID),
+		SellerDID:   strings.TrimSpace(req.SellerDID),
+	}); err != nil {
+		log.Printf("failed to save local identity cache: %v", err)
+		helperError(w, http.StatusInternalServerError, "failed to save identity cache")
+		return
+	}
+
+	identityPath, err := defaultIdentityStoreDisplayPath()
+	if err != nil {
+		log.Printf("failed to resolve local identity cache path: %v", err)
+	}
+
+	helperJSON(w, http.StatusOK, apiIdentityResponse{
+		Success:      true,
+		CacheFound:   true,
+		IdentityDID:  identityDID,
+		BuyerDID:     strings.TrimSpace(req.BuyerDID),
+		SellerDID:    strings.TrimSpace(req.SellerDID),
+		IdentityPath: identityPath,
+		Message:      "identity cache saved",
 	})
 }
 
@@ -236,13 +290,6 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := saveLocalIdentityCache(localIdentityCache{
-		IdentityDID: authorityResp.UserDID,
-		BuyerDID:    authorityResp.BuyerDID,
-		SellerDID:   authorityResp.SellerDID,
-	}); err != nil {
-		log.Printf("failed to save local identity cache: %v", err)
-	}
 	identityPath, err := defaultIdentityStoreDisplayPath()
 	if err != nil {
 		log.Printf("failed to resolve local identity cache path: %v", err)
@@ -301,9 +348,6 @@ func (s helperServer) apiLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := saveIdentityCacheFromLoginResponse(body, userDID); err != nil {
-		log.Printf("failed to sync local identity cache after login: %v", err)
-	}
 	if identityPath, err := defaultIdentityStoreDisplayPath(); err == nil {
 		body = addJSONField(body, "identityPath", identityPath)
 	} else {
