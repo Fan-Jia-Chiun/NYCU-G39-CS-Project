@@ -63,7 +63,7 @@ type AssetLoginInfo struct {
 	AssetInfo        AssetInfo `json:"assetInfo"`
 	AssetID          string    `json:"assetID"`
 	AssetAddr        string    `json:"assetAddr"`
-	AssetInfoAddr    string    `json:"assetInfoAddr"`
+	AssetInfoCID     string    `json:"assetInfoCID"`
 	PhotoURL         string    `json:"photoUrl"`
 	PhotoCID         string    `json:"photoCID"`
 	PhotoGatewayURL  string    `json:"photoGatewayUrl"`
@@ -101,9 +101,9 @@ type TradingIdentityRecord struct {
 }
 
 type AssetCertificateRecord struct {
-	AssetID       string `json:"assetID"`
-	AssetInfoAddr string `json:"assetInfoAddr"`
-	LegalStatus   int    `json:"legalStatus"`
+	AssetID      string `json:"assetID"`
+	AssetInfoCID string `json:"assetInfoCID"`
+	LegalStatus  int    `json:"legalStatus"`
 }
 
 type LoginInitializationData struct {
@@ -352,7 +352,7 @@ func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID s
 		if err != nil {
 			return nil, err
 		}
-		assetInfo := readAssetInfoFromIPFS(ipfs, cert.AssetInfoAddr)
+		assetInfo := readAssetInfoFromIPFS(ipfs, cert.AssetInfoCID)
 		photoCID := normalizeIPFSCID(assetInfo.PhotoURL)
 		assets = append(assets, AssetLoginInfo{
 			AssetName:        assetInfo.AssetName,
@@ -362,7 +362,7 @@ func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID s
 			AssetInfo:        assetInfo,
 			AssetID:          cert.AssetID,
 			AssetAddr:        assetAddr,
-			AssetInfoAddr:    cert.AssetInfoAddr,
+			AssetInfoCID:     cert.AssetInfoCID,
 			PhotoURL:         assetInfo.PhotoURL,
 			PhotoCID:         photoCID,
 			PhotoGatewayURL:  ipfsGatewayURL(photoCID),
@@ -373,36 +373,36 @@ func evaluateUserAssets(fabricGateway *FabricGateway, ipfs ipfsReader, userDID s
 	return assets, nil
 }
 
-func readAssetNameFromIPFS(ipfs ipfsReader, assetInfoAddr string) string {
-	return readAssetInfoFromIPFS(ipfs, assetInfoAddr).AssetName
+func readAssetNameFromIPFS(ipfs ipfsReader, assetInfoCID string) string {
+	return readAssetInfoFromIPFS(ipfs, assetInfoCID).AssetName
 }
 
-func readAssetInfoFromIPFS(ipfs ipfsReader, assetInfoAddr string) AssetInfo {
-	if cachedInfo, ok := getCachedAssetInfo(assetInfoAddr); ok {
+func readAssetInfoFromIPFS(ipfs ipfsReader, assetInfoCID string) AssetInfo {
+	if cachedInfo, ok := getCachedAssetInfo(assetInfoCID); ok {
 		return cachedInfo
 	}
-	if ipfs == nil || strings.TrimSpace(assetInfoAddr) == "" {
+	if ipfs == nil || strings.TrimSpace(assetInfoCID) == "" {
 		return AssetInfo{}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	data, err := ipfs.Cat(ctx, assetInfoAddr)
+	data, err := ipfs.Cat(ctx, assetInfoCID)
 	if err != nil {
-		log.Printf("failed to read asset info from IPFS %s: %v", assetInfoAddr, err)
+		log.Printf("failed to read asset info from IPFS %s: %v", assetInfoCID, err)
 		return AssetInfo{}
 	}
 
 	var info AssetInfo
 	if err := json.Unmarshal(data, &info); err != nil {
-		log.Printf("failed to decode asset info from IPFS %s: %v", assetInfoAddr, err)
+		log.Printf("failed to decode asset info from IPFS %s: %v", assetInfoCID, err)
 		return AssetInfo{}
 	}
 
 	info.AssetName = strings.TrimSpace(info.AssetName)
 	info.PhotoURL = strings.TrimSpace(info.PhotoURL)
-	cacheAssetInfo(assetInfoAddr, info)
+	cacheAssetInfo(assetInfoCID, info)
 
 	return info
 }

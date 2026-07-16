@@ -64,7 +64,7 @@ const el = {
   assetMessage: document.querySelector("#assetMessage"),
   assetID: document.querySelector("#assetID"),
   photoCID: document.querySelector("#photoCID"),
-  assetInfoAddr: document.querySelector("#assetInfoAddr"),
+  assetInfoCID: document.querySelector("#assetInfoCID"),
   assetResult: document.querySelector("#assetResult"),
 };
 
@@ -365,7 +365,7 @@ async function registerAsset() {
     el.assetMessage.textContent = response.message || "-";
     el.assetID.textContent = response.assetID || "-";
     el.photoCID.textContent = response.photoCID || "-";
-    el.assetInfoAddr.textContent = response.assetInfoAddr || "-";
+    el.assetInfoCID.textContent = response.assetInfoCID || "-";
     renderJSON(el.assetResult, response);
     setStatus(el.assetState, "ok", "Registered");
   } catch (error) {
@@ -584,7 +584,7 @@ function renderAssets(assets) {
     columns.push(
       ["Asset ID", (asset) => asset.assetID || asset.assetAddr || "-"],
       ["Asset Certificate Address", (asset) => asset.assetAddr || "-"],
-      ["AssetInfoAddr", (asset) => asset.assetInfoAddr || "-"],
+      ["AssetInfoCID", (asset) => asset.assetInfoCID || "-"],
       ["IPFS CID", (asset) => asset.photoCID || normalizeIPFSCID(assetInfoValue(asset, "photoUrl")) || "-"],
       ["Photo URL", (asset) => photoLinkURL(asset) || assetInfoValue(asset, "photoUrl") || "-"],
     );

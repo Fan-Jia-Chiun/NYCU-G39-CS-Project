@@ -54,12 +54,12 @@ type UserAssetList struct {
 }
 
 type AssetCertificate struct {
-	ObjectType    string `json:"objectType"`
-	AssetID       string `json:"assetID"`
-	AssetInfoAddr string `json:"assetInfoAddr,omitempty"`
-	LegalStatus   int    `json:"legalStatus"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"`
+	ObjectType   string `json:"objectType"`
+	AssetID      string `json:"assetID"`
+	AssetInfoCID string `json:"assetInfoCID,omitempty"`
+	LegalStatus  int    `json:"legalStatus"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
 }
 
 type PropertyIndex struct {

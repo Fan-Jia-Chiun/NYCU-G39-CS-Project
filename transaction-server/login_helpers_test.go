@@ -264,7 +264,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 						},
 						AssetID:         "asset-1",
 						AssetAddr:       "ASSET_CERT:asset-1",
-						AssetInfoAddr:   "QmAssetInfo",
+						AssetInfoCID:    "QmAssetInfo",
 						PhotoURL:        "ipfs://QmPhoto",
 						PhotoCID:        "QmPhoto",
 						PhotoGatewayURL: "http://127.0.0.1:8080/ipfs/QmPhoto",
@@ -325,7 +325,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 		got.Assets[0].AssetInfo.PhotoURL != "ipfs://QmPhoto" ||
 		got.Assets[0].AssetInfo.Description != "Demo property" ||
 		got.Assets[0].AssetID != "asset-1" ||
-		got.Assets[0].AssetInfoAddr != "QmAssetInfo" ||
+		got.Assets[0].AssetInfoCID != "QmAssetInfo" ||
 		got.Assets[0].PhotoURL != "ipfs://QmPhoto" ||
 		got.Assets[0].PhotoCID != "QmPhoto" ||
 		got.Assets[0].PhotoGatewayURL != "http://127.0.0.1:8080/ipfs/QmPhoto" ||

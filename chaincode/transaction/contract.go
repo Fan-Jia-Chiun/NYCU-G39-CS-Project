@@ -214,7 +214,7 @@ func (c *TransactionIdentityRegistryContract) GetAssetList(ctx contractapi.Trans
 }
 
 // RegisterAsset creates an asset certificate and indexes it under the owner DID.
-// Input: AssetInfoAddr, userDID. Output: assetID.
+// Input: AssetInfoCID, userDID. Output: assetID.
 func (c *TransactionIdentityRegistryContract) RegisterAsset(ctx contractapi.TransactionContextInterface, assetData string, userDID string) (string, error) {
 	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
 		return "", err
@@ -253,12 +253,12 @@ func (c *TransactionIdentityRegistryContract) RegisterAsset(ctx contractapi.Tran
 	}
 
 	cert := AssetCertificate{
-		ObjectType:    objectTypeAssetCert,
-		AssetID:       assetID,
-		AssetInfoAddr: assetData,
-		LegalStatus:   legalStatusNormal,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ObjectType:   objectTypeAssetCert,
+		AssetID:      assetID,
+		AssetInfoCID: assetData,
+		LegalStatus:  legalStatusNormal,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if err := putAssetCertificate(ctx, assetAddr, &cert); err != nil {
 		return "", err

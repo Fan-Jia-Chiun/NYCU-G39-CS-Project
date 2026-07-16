@@ -71,13 +71,13 @@ type apiRegisterResponse struct {
 }
 
 type apiAssetRegistrationResponse struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	AssetID       string `json:"assetID,omitempty"`
-	AssetAddr     string `json:"assetAddr,omitempty"`
-	PhotoCID      string `json:"photoCID,omitempty"`
-	AssetInfoAddr string `json:"assetInfoAddr,omitempty"`
-	PhotoHash     string `json:"photoHash,omitempty"`
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	AssetID      string `json:"assetID,omitempty"`
+	AssetAddr    string `json:"assetAddr,omitempty"`
+	PhotoCID     string `json:"photoCID,omitempty"`
+	AssetInfoCID string `json:"assetInfoCID,omitempty"`
+	PhotoHash    string `json:"photoHash,omitempty"`
 }
 
 type apiIdentityResponse struct {

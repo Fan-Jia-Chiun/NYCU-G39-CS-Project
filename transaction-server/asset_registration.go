@@ -24,12 +24,12 @@ const (
 var lowercaseSHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type AssetRegistrationResponse struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	AssetID       string `json:"assetID"`
-	AssetAddr     string `json:"assetAddr,omitempty"`
-	PhotoCID      string `json:"photoCID"`
-	AssetInfoAddr string `json:"assetInfoAddr"`
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	AssetID      string `json:"assetID"`
+	AssetAddr    string `json:"assetAddr,omitempty"`
+	PhotoCID     string `json:"photoCID"`
+	AssetInfoCID string `json:"assetInfoCID"`
 }
 
 type AssetInfo struct {
@@ -178,28 +178,28 @@ func assetRegistrationHandler(fabricGateway *FabricGateway, ipfs ipfsAdder) http
 			return
 		}
 
-		assetInfoAddr, err := ipfs.Add(ctx, "asset-info.json", assetInfoBytes)
+		assetInfoCID, err := ipfs.Add(ctx, "asset-info.json", assetInfoBytes)
 		if err != nil {
 			log.Printf("failed to upload asset info to IPFS: %v", err)
 			writeLoginError(w, http.StatusBadGateway, "failed to upload asset info")
 			return
 		}
-		cacheAssetInfo(assetInfoAddr, assetInfo)
+		cacheAssetInfo(assetInfoCID, assetInfo)
 
-		assetID, assetAddr, err := registerAssetOnChain(fabricGateway, assetInfoAddr, req.UserDID)
+		assetID, assetAddr, err := registerAssetOnChain(fabricGateway, assetInfoCID, req.UserDID)
 		if err != nil {
-			log.Printf("failed to register asset on chain after IPFS upload photo=%s assetInfo=%s: %v", photoCID, assetInfoAddr, err)
+			log.Printf("failed to register asset on chain after IPFS upload photo=%s assetInfo=%s: %v", photoCID, assetInfoCID, err)
 			writeLoginError(w, http.StatusBadGateway, "failed to register asset on chain")
 			return
 		}
 
 		writeJSON(w, http.StatusOK, AssetRegistrationResponse{
-			Success:       true,
-			Message:       "asset registered",
-			AssetID:       assetID,
-			AssetAddr:     assetAddr,
-			PhotoCID:      photoCID,
-			AssetInfoAddr: assetInfoAddr,
+			Success:      true,
+			Message:      "asset registered",
+			AssetID:      assetID,
+			AssetAddr:    assetAddr,
+			PhotoCID:     photoCID,
+			AssetInfoCID: assetInfoCID,
 		})
 	}
 }
@@ -359,8 +359,8 @@ func evaluatePublicKey(fabricGateway *FabricGateway, userDID string) (string, er
 	return string(result), nil
 }
 
-func registerAssetOnChain(fabricGateway *FabricGateway, assetInfoAddr string, userDID string) (string, string, error) {
-	result, err := fabricGateway.Contract.SubmitTransaction("RegisterAsset", assetInfoAddr, userDID)
+func registerAssetOnChain(fabricGateway *FabricGateway, assetInfoCID string, userDID string) (string, string, error) {
+	result, err := fabricGateway.Contract.SubmitTransaction("RegisterAsset", assetInfoCID, userDID)
 	if err != nil {
 		return "", "", err
 	}

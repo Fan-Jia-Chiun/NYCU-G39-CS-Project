@@ -12,53 +12,53 @@ var assetInfoNameCache = struct {
 	infos: map[string]AssetInfo{},
 }
 
-func cacheAssetInfoName(assetInfoAddr string, assetName string) {
-	assetInfoAddr = normalizeIPFSCID(assetInfoAddr)
+func cacheAssetInfoName(assetInfoCID string, assetName string) {
+	assetInfoCID = normalizeIPFSCID(assetInfoCID)
 	assetName = strings.TrimSpace(assetName)
-	if assetInfoAddr == "" || assetName == "" {
+	if assetInfoCID == "" || assetName == "" {
 		return
 	}
 
 	assetInfoNameCache.Lock()
 	defer assetInfoNameCache.Unlock()
-	info := assetInfoNameCache.infos[assetInfoAddr]
+	info := assetInfoNameCache.infos[assetInfoCID]
 	info.AssetName = assetName
-	assetInfoNameCache.infos[assetInfoAddr] = info
+	assetInfoNameCache.infos[assetInfoCID] = info
 }
 
-func getCachedAssetInfoName(assetInfoAddr string) string {
-	assetInfoAddr = normalizeIPFSCID(assetInfoAddr)
-	if assetInfoAddr == "" {
+func getCachedAssetInfoName(assetInfoCID string) string {
+	assetInfoCID = normalizeIPFSCID(assetInfoCID)
+	if assetInfoCID == "" {
 		return ""
 	}
 
 	assetInfoNameCache.RLock()
 	defer assetInfoNameCache.RUnlock()
-	return assetInfoNameCache.infos[assetInfoAddr].AssetName
+	return assetInfoNameCache.infos[assetInfoCID].AssetName
 }
 
-func cacheAssetInfo(assetInfoAddr string, info AssetInfo) {
-	assetInfoAddr = normalizeIPFSCID(assetInfoAddr)
+func cacheAssetInfo(assetInfoCID string, info AssetInfo) {
+	assetInfoCID = normalizeIPFSCID(assetInfoCID)
 	info.AssetName = strings.TrimSpace(info.AssetName)
 	info.PhotoURL = strings.TrimSpace(info.PhotoURL)
-	if assetInfoAddr == "" {
+	if assetInfoCID == "" {
 		return
 	}
 
 	assetInfoNameCache.Lock()
 	defer assetInfoNameCache.Unlock()
-	assetInfoNameCache.infos[assetInfoAddr] = info
+	assetInfoNameCache.infos[assetInfoCID] = info
 }
 
-func getCachedAssetInfo(assetInfoAddr string) (AssetInfo, bool) {
-	assetInfoAddr = normalizeIPFSCID(assetInfoAddr)
-	if assetInfoAddr == "" {
+func getCachedAssetInfo(assetInfoCID string) (AssetInfo, bool) {
+	assetInfoCID = normalizeIPFSCID(assetInfoCID)
+	if assetInfoCID == "" {
 		return AssetInfo{}, false
 	}
 
 	assetInfoNameCache.RLock()
 	defer assetInfoNameCache.RUnlock()
-	info, ok := assetInfoNameCache.infos[assetInfoAddr]
+	info, ok := assetInfoNameCache.infos[assetInfoCID]
 
 	return info, ok
 }
