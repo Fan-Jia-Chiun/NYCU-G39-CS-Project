@@ -21,10 +21,11 @@ import (
 const localMaxAssetRequestSize = 11 << 20
 
 type helperServer struct {
-	keyDir      string
-	registerURL string
-	loginURL    string
-	assetURL    string
+	keyDir         string
+	registerURL    string
+	loginURL       string
+	assetURL       string
+	transactionURL string
 }
 
 type signLoginRequest struct {
@@ -96,17 +97,18 @@ type apiSaveIdentityRequest struct {
 	SellerDID string `json:"sellerDID,omitempty"`
 }
 
-func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string) error {
+func runHelperServer(addr string, keyDir string, registerURL string, loginURL string, assetURL string, transactionURL string) error {
 	server := helperServer{
-		keyDir:      strings.TrimSpace(keyDir),
-		registerURL: strings.TrimSpace(registerURL),
-		loginURL:    strings.TrimSpace(loginURL),
-		assetURL:    strings.TrimSpace(assetURL),
+		keyDir:         strings.TrimSpace(keyDir),
+		registerURL:    strings.TrimSpace(registerURL),
+		loginURL:       strings.TrimSpace(loginURL),
+		assetURL:       strings.TrimSpace(assetURL),
+		transactionURL: strings.TrimSpace(transactionURL),
 	}
 	if server.keyDir == "" {
 		return fmt.Errorf("key directory is required")
 	}
-	if server.registerURL == "" || server.loginURL == "" || server.assetURL == "" {
+	if server.registerURL == "" || server.loginURL == "" || server.assetURL == "" || server.transactionURL == "" {
 		return fmt.Errorf("authority and transaction server URLs are required")
 	}
 
@@ -116,6 +118,7 @@ func runHelperServer(addr string, keyDir string, registerURL string, loginURL st
 	mux.HandleFunc("/api/register", withCORS(server.apiRegisterHandler))
 	mux.HandleFunc("/api/login", withCORS(server.apiLoginHandler))
 	mux.HandleFunc("/api/assets/register", withCORS(server.apiAssetRegistrationHandler))
+	mux.HandleFunc("/api/transactions/launch", withCORS(server.apiTransactionLaunchHandler))
 	mux.HandleFunc("/sign/login", withCORS(server.signLoginHandler))
 	mux.HandleFunc("/sign/register-asset", withCORS(server.signAssetHandler))
 	mux.Handle("/", http.FileServer(http.Dir(localClientWebDir())))
@@ -125,6 +128,7 @@ func runHelperServer(addr string, keyDir string, registerURL string, loginURL st
 	log.Printf("Authority register endpoint: %s", server.registerURL)
 	log.Printf("Transaction login endpoint: %s", server.loginURL)
 	log.Printf("Transaction asset endpoint: %s", server.assetURL)
+	log.Printf("Transaction launch endpoint: %s", server.transactionURL)
 	return http.ListenAndServe(addr, mux)
 }
 
@@ -424,6 +428,54 @@ func (s helperServer) apiAssetRegistrationHandler(w http.ResponseWriter, r *http
 	}
 	assetResp.PhotoHash = payload.Fields["photoHash"]
 	helperJSON(w, http.StatusOK, assetResp)
+}
+
+func (s helperServer) apiTransactionLaunchHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		helperError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	defer r.Body.Close()
+
+	var req TransactionLaunchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helperError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.SessionToken = strings.TrimSpace(req.SessionToken)
+	req.UserDID = strings.TrimSpace(req.UserDID)
+	req.SellerDID = strings.TrimSpace(req.SellerDID)
+	req.AssetID = strings.TrimSpace(req.AssetID)
+	req.FinalizingTime = strings.TrimSpace(req.FinalizingTime)
+
+	if req.SessionToken == "" || req.UserDID == "" || req.SellerDID == "" || req.AssetID == "" {
+		helperError(w, http.StatusBadRequest, "sessionToken, userDID, sellerDID, and assetID are required")
+		return
+	}
+	if req.BasicPrice == 0 {
+		helperError(w, http.StatusBadRequest, "basicPrice must be greater than zero")
+		return
+	}
+	if req.TransactionMode > 2 {
+		helperError(w, http.StatusBadRequest, "transactionMode must be 0, 1, or 2")
+		return
+	}
+	if req.TransactionMode != 0 && req.FinalizingTime == "" {
+		helperError(w, http.StatusBadRequest, "finalizingTime is required for auction modes")
+		return
+	}
+
+	body, statusCode, err := postJSONToServer(s.transactionURL, req)
+	if err != nil {
+		helperError(w, http.StatusBadGateway, "failed to call transaction server")
+		return
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		forwardUpstreamError(w, statusCode, body, "transaction server rejected transaction launch")
+		return
+	}
+
+	writeRawJSON(w, http.StatusOK, body)
 }
 
 func (s helperServer) signLoginHandler(w http.ResponseWriter, r *http.Request) {

@@ -61,6 +61,7 @@
         <button class="tab-button active" type="button" data-tab="registerPanel">Register</button>
         <button class="tab-button" type="button" data-tab="loginPanel">Login / Refresh</button>
         <button class="tab-button" type="button" data-tab="assetPanel">Register Asset</button>
+        <button class="tab-button" type="button" data-tab="transactionPanel">Launch Transaction</button>
       </nav>
 
       <section id="registerPanel" class="panel tab-panel active">
@@ -258,8 +259,67 @@
 
         <pre id="assetResult" class="response-box dev-only"></pre>
       </section>
+
+      <section id="transactionPanel" class="panel tab-panel">
+        <div class="panel-heading">
+          <h2>Launch Transaction</h2>
+          <span id="transactionState" class="status-tag idle">Waiting</span>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Asset ID
+            <input id="transactionAssetID" type="text" autocomplete="off" />
+          </label>
+          <label>
+            Transaction Mode
+            <select id="transactionMode">
+              <option value="0">Fixed Price Sale</option>
+              <option value="1">Bidding Auction</option>
+              <option value="2">Sealed-bid Auction</option>
+            </select>
+          </label>
+          <label>
+            Price
+            <input id="basicPrice" type="number" min="1" step="1" value="1000" />
+          </label>
+          <label id="finalizingTimeField" hidden>
+            Finalizing Time (UTC+8)
+            <input id="finalizingTime" type="datetime-local" step="1" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="launchTransactionButton" type="button">Submit for Review</button>
+        </div>
+
+        <div class="result-grid">
+          <output>
+            <span>Review Result</span>
+            <strong id="transactionMessage">-</strong>
+          </output>
+          <output>
+            <span>Transaction ID</span>
+            <strong id="launchedTransactionID">-</strong>
+          </output>
+          <output>
+            <span>Transaction Status</span>
+            <strong id="launchedTransactionStatus">-</strong>
+          </output>
+          <output>
+            <span>Legal Status</span>
+            <strong id="launchedLegalStatus">-</strong>
+          </output>
+          <output class="dev-only">
+            <span>Review Reason</span>
+            <strong id="transactionReviewReason">-</strong>
+          </output>
+        </div>
+
+        <pre id="transactionResult" class="response-box dev-only"></pre>
+      </section>
     </main>
 
-    <script src="./app.js?v=20260715-ui-modes"></script>
+    <script src="./app.js?v=20260724-transaction-launch"></script>
   </body>
 </html>

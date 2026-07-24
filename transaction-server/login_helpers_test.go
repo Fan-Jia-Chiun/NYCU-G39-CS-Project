@@ -277,7 +277,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 						TransactionRole: 2,
 						IsActive:        true,
 						TradeInfo: TradeInfo{
-							TradeID:           7,
+							TransactionID:     7,
 							AssetID:           "asset-1",
 							TransactionStatus: 1,
 						},
@@ -285,7 +285,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 				},
 				HistoricalTrades: []TradeLoginInfo{},
 				CurrentActiveTransactions: []TradeInfo{
-					{TradeID: 9, AssetID: "asset-2", TransactionStatus: 1},
+					{TransactionID: 9, AssetID: "asset-2", TransactionStatus: 1},
 				},
 			}, nil
 		},
@@ -335,7 +335,7 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 	if len(got.ActiveTrades) != 1 || got.ActiveTrades[0].TradeID != 7 {
 		t.Fatalf("active trades = %+v", got.ActiveTrades)
 	}
-	if len(got.CurrentActiveTransactions) != 1 || got.CurrentActiveTransactions[0].TradeID != 9 {
+	if len(got.CurrentActiveTransactions) != 1 || got.CurrentActiveTransactions[0].TransactionID != 9 {
 		t.Fatalf("current active transactions = %+v", got.CurrentActiveTransactions)
 	}
 }

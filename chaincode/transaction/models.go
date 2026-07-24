@@ -5,8 +5,9 @@ const (
 	objectTypeUserAssetList   = "userAssetList"
 	objectTypeAssetCert       = "assetCertificate"
 	objectTypePropertyIndex   = "propertyIndex"
-	objectTypeTradeInfo       = "tradeInfo"
+	objectTypeTransactionInfo = "transactionInfo"
 	objectTypeUserTradeList   = "userTransactionList"
+	transactionCounterKey     = "TRANSACTION_COUNTER"
 
 	tradingIdentityStatusActive = "ACTIVE"
 
@@ -16,11 +17,34 @@ const (
 	accountStatusAvailable   uint = 0
 	defaultBuyerCreditScore  uint = 80
 	defaultSellerCreditScore uint = 80
-	legalStatusNormal        int  = 0
-	tradeStatusCompleted     uint = 5
-	tradeStatusCancelled     uint = 6
-	tradeStatusReturned      uint = 9
-	tradeStatusRejected      uint = 10
+
+	legalStatusNormal             int = 0
+	legalStatusPending            int = 1
+	legalStatusSelling            int = 2
+	legalStatusBidding            int = 3
+	legalStatusWinnerConfirmation int = 4
+	legalStatusTransiting         int = 5
+	legalStatusRestricted         int = 6
+
+	transactionStatusReviewing          uint = 0
+	transactionStatusInProgress         uint = 1
+	transactionStatusWinnerConfirmation uint = 2
+	transactionStatusPendingShipment    uint = 3
+	transactionStatusTransporting       uint = 4
+	transactionStatusCompleted          uint = 5
+	transactionStatusCancelled          uint = 6
+	transactionStatusReturnRequest      uint = 7
+	transactionStatusReturning          uint = 8
+	transactionStatusReturned           uint = 9
+	transactionStatusRejected           uint = 10
+
+	transactionModeFixedPrice uint = 0
+	transactionModeBidding    uint = 1
+	transactionModeSealedBid  uint = 2
+
+	transactionRoleBuyer  uint = 0
+	transactionRoleBidder uint = 1
+	transactionRoleSeller uint = 2
 )
 
 type TradingIdentity struct {
@@ -69,26 +93,42 @@ type PropertyIndex struct {
 	ChangeLog  []string `json:"changeLog"`
 }
 
-type TradeInfo struct {
-	ObjectType          string `json:"objectType,omitempty"`
-	TradeID             uint   `json:"tradeID,omitempty"`
-	AssetID             string `json:"assetID"`
-	TransactionStatus   uint   `json:"transactionStatus"`
-	TransactionMode     uint   `json:"transactionMode"`
-	CurrentHighestPrice uint   `json:"currentHighestPrice"`
+type TimeInfo struct {
+	Year   uint `json:"year"`
+	Month  uint `json:"month"`
+	Day    uint `json:"day"`
+	Hour   uint `json:"hour"`
+	Minute uint `json:"minute"`
+	Second uint `json:"second"`
+}
+
+type TransactionInfo struct {
+	ObjectType          string   `json:"objectType,omitempty"`
+	TransactionID       uint     `json:"transactionID,omitempty"`
+	AssetID             string   `json:"assetID"`
+	SellerDID           string   `json:"sellerDID"`
+	TransactionStatus   uint     `json:"transactionStatus"`
+	TransactionMode     uint     `json:"transactionMode"`
+	StartTime           TimeInfo `json:"startTime"`
+	FixedPrice          uint     `json:"fixedPrice"`
+	BasicPrice          uint     `json:"basicPrice"`
+	CurrentHighestBid   uint     `json:"currentHighestBid"`
+	FinalizingTime      TimeInfo `json:"finalizingTime"`
+	LogisticsRecordAddr string   `json:"logisticsRecordAddr,omitempty"`
 }
 
 type UserTransactionList struct {
 	ObjectType          string   `json:"objectType"`
 	UserDID             string   `json:"userDID"`
-	TradeIDList         []uint   `json:"tradeIDList"`
+	TransactionIDList   []uint   `json:"transactionIDList"`
 	AssetIDList         []string `json:"assetIDList,omitempty"`
 	TransactionRoleList []uint   `json:"transactionRoleList"`
 	IsActiveList        []bool   `json:"isActiveList"`
 }
 
 type TradeListResult struct {
-	TradeIDList         []uint `json:"tradeIDList"`
-	TransactionRoleList []uint `json:"transactionRoleList"`
-	IsActiveList        []bool `json:"isActiveList"`
+	TransactionIDList   []uint   `json:"transactionIDList"`
+	AssetIDList         []string `json:"assetIDList"`
+	TransactionRoleList []uint   `json:"transactionRoleList"`
+	IsActiveList        []bool   `json:"isActiveList"`
 }

@@ -66,6 +66,19 @@ const el = {
   photoCID: document.querySelector("#photoCID"),
   assetInfoCID: document.querySelector("#assetInfoCID"),
   assetResult: document.querySelector("#assetResult"),
+  transactionAssetID: document.querySelector("#transactionAssetID"),
+  transactionMode: document.querySelector("#transactionMode"),
+  basicPrice: document.querySelector("#basicPrice"),
+  finalizingTimeField: document.querySelector("#finalizingTimeField"),
+  finalizingTime: document.querySelector("#finalizingTime"),
+  launchTransactionButton: document.querySelector("#launchTransactionButton"),
+  transactionState: document.querySelector("#transactionState"),
+  transactionMessage: document.querySelector("#transactionMessage"),
+  launchedTransactionID: document.querySelector("#launchedTransactionID"),
+  launchedTransactionStatus: document.querySelector("#launchedTransactionStatus"),
+  launchedLegalStatus: document.querySelector("#launchedLegalStatus"),
+  transactionReviewReason: document.querySelector("#transactionReviewReason"),
+  transactionResult: document.querySelector("#transactionResult"),
 };
 
 init();
@@ -87,6 +100,8 @@ function init() {
   el.registerButton.addEventListener("click", registerUser);
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
+  el.launchTransactionButton.addEventListener("click", launchTransaction);
+  el.transactionMode.addEventListener("change", updateTransactionModeFields);
   el.photo.addEventListener("change", updatePhotoHash);
   el.saveIdentityFolderButton.addEventListener("click", saveIdentityToFolder);
   el.identityFile.addEventListener("change", loadSelectedIdentityFile);
@@ -99,6 +114,8 @@ function init() {
     state.userDID = el.userDID.value.trim();
     sessionStorage.setItem("demo.userDID", state.userDID);
   });
+  el.finalizingTime.value = formatTaipeiDateTimeInput(new Date(Date.now() + 60 * 60 * 1000));
+  updateTransactionModeFields();
 }
 
 async function loadSelectedIdentityFile() {
@@ -366,6 +383,7 @@ async function registerAsset() {
     el.assetID.textContent = response.assetID || "-";
     el.photoCID.textContent = response.photoCID || "-";
     el.assetInfoCID.textContent = response.assetInfoCID || "-";
+    el.transactionAssetID.value = response.assetID || "";
     renderJSON(el.assetResult, response);
     setStatus(el.assetState, "ok", "Registered");
   } catch (error) {
@@ -374,6 +392,64 @@ async function registerAsset() {
     setStatus(el.assetState, "bad", "Failed");
   } finally {
     el.registerAssetButton.disabled = false;
+  }
+}
+
+function updateTransactionModeFields() {
+  const mode = Number(el.transactionMode.value);
+  const auctionMode = mode === 1 || mode === 2;
+  el.finalizingTimeField.hidden = !auctionMode;
+  el.finalizingTime.required = auctionMode;
+}
+
+async function launchTransaction() {
+  const mode = Number(el.transactionMode.value);
+  const payload = {
+    sessionToken: state.sessionToken || el.sessionToken.value.trim(),
+    userDID: el.userDID.value.trim(),
+    sellerDID: state.sellerDID,
+    assetID: el.transactionAssetID.value.trim(),
+    transactionMode: mode,
+    basicPrice: Number(el.basicPrice.value),
+  };
+  if (mode !== 0) {
+    payload.finalizingTime = taipeiInputToRFC3339(el.finalizingTime.value);
+  }
+
+  if (!payload.sessionToken || !payload.userDID || !payload.sellerDID || !payload.assetID || !payload.basicPrice) {
+    setStatus(el.transactionState, "bad", "Missing fields");
+    renderJSON(el.transactionResult, {
+      success: false,
+      message: "Log in and provide an asset, transaction mode, and price",
+    });
+    return;
+  }
+  if (mode !== 0 && !payload.finalizingTime) {
+    setStatus(el.transactionState, "bad", "Missing end time");
+    renderJSON(el.transactionResult, {
+      success: false,
+      message: "Finalizing Time is required for auction modes",
+    });
+    return;
+  }
+
+  setStatus(el.transactionState, "busy", "Reviewing");
+  el.launchTransactionButton.disabled = true;
+  try {
+    const response = await postJSON(apiURL("/api/transactions/launch"), payload);
+    el.transactionMessage.textContent = response.message || "-";
+    el.launchedTransactionID.textContent = displayValue(response.transactionID);
+    el.launchedTransactionStatus.textContent = transactionStatusLabel(response.transactionStatus);
+    el.launchedLegalStatus.textContent = legalStatusLabel(response.legalStatus);
+    el.transactionReviewReason.textContent = response.reviewReason || "-";
+    renderJSON(el.transactionResult, response);
+    setStatus(el.transactionState, response.approved ? "ok" : "bad", response.approved ? "Approved" : "Rejected");
+  } catch (error) {
+    renderJSON(el.transactionResult, errorPayload(error));
+    el.transactionMessage.textContent = "Failure";
+    setStatus(el.transactionState, "bad", "Failed");
+  } finally {
+    el.launchTransactionButton.disabled = false;
   }
 }
 
@@ -466,6 +542,31 @@ function formatTaipeiDateTime(value) {
     second: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatTaipeiDateTimeInput(value) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(value);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "";
+
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
+function taipeiInputToRFC3339(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  return `${text.length === 16 ? `${text}:00` : text}+08:00`;
 }
 
 function activateTab(panelID) {
@@ -603,13 +704,13 @@ function renderTradeInfoList(container, countNode, trades, assetNameMap, emptyTe
   const columns = [
     ["Property Name", (trade) => propertyNameForTrade(trade, assetNameMap)],
     ["Trade Mode", (trade) => transactionModeLabel(trade.transactionMode)],
-    ["Current Price", (trade) => displayValue(trade.currentHighestPrice)],
-    ["End Time", (trade) => trade.endTime || trade.endTimeText || "-"],
+    ["Current Price", (trade) => transactionCurrentPrice(trade)],
+    ["End Time (UTC+8)", (trade) => transactionTimeInfoLabel(trade.finalizingTime)],
     ["Action", () => actionNode("View")],
   ];
   if (isDeveloperMode()) {
     columns.push(
-      ["Trade ID", (trade) => displayValue(trade.tradeID)],
+      ["Trade ID", (trade) => displayValue(trade.transactionID || trade.tradeID)],
       ["Asset ID", (trade) => trade.assetID || "-"],
       ["Transaction Status", (trade) => transactionStatusLabel(trade.transactionStatus)],
       ["Transaction Mode", (trade) => transactionModeLabel(trade.transactionMode)],
@@ -778,6 +879,10 @@ function normalizeIPFSCID(value) {
 }
 
 function assetRegistrationTimeLabel(value) {
+  return transactionTimeInfoLabel(value);
+}
+
+function transactionTimeInfoLabel(value) {
   if (!value || typeof value !== "object") {
     return "-";
   }
@@ -808,8 +913,17 @@ function displayValue(value) {
 }
 
 function legalStatusLabel(status) {
-  if (status === 0) {
-    return isDeveloperMode() ? "Normal (code 0)" : "Normal";
+  const labels = {
+    0: "Normal",
+    1: "Pending",
+    2: "Selling",
+    3: "Bidding",
+    4: "Winner Confirmation",
+    5: "Transiting",
+    6: "Restricted",
+  };
+  if (Object.hasOwn(labels, status)) {
+    return isDeveloperMode() ? `${labels[status]} (code ${status})` : labels[status];
   }
 
   return isDeveloperMode() ? `Unknown (code ${displayValue(status)})` : "Unknown";
@@ -820,10 +934,10 @@ function transactionRoleLabel(role) {
     return isDeveloperMode() ? "Buyer (code 0)" : "Buyer";
   }
   if (role === 1) {
-    return isDeveloperMode() ? "Seller (code 1)" : "Seller";
+    return isDeveloperMode() ? "Bidder (code 1)" : "Bidder";
   }
   if (role === 2) {
-    return isDeveloperMode() ? "Participant (code 2)" : "Participant";
+    return isDeveloperMode() ? "Seller (code 2)" : "Seller";
   }
 
   return isDeveloperMode() ? `Code ${displayValue(role)}` : "Unknown";
@@ -842,19 +956,26 @@ function activeFlagLabel(isActive) {
 
 function transactionStatusLabel(status) {
   const labels = {
-    5: "Completed / code 5",
-    6: "Cancelled / code 6",
-    9: "Returned / code 9",
-    10: "Rejected / code 10",
+    0: "Reviewing",
+    1: "In Progress",
+    2: "Winner Confirmation",
+    3: "Pending Shipment",
+    4: "Transporting",
+    5: "Completed",
+    6: "Cancelled",
+    7: "Return Request",
+    8: "Returning",
+    9: "Returned",
+    10: "Rejected",
   };
   if (Object.hasOwn(labels, status)) {
-    return isDeveloperMode() ? labels[status] : labels[status].replace(/ \/ code \d+$/, "");
+    return isDeveloperMode() ? `${labels[status]} (code ${status})` : labels[status];
   }
   if (status === null || status === undefined || status === "") {
     return "-";
   }
 
-  return isDeveloperMode() ? `Active status (code ${status})` : "Active";
+  return isDeveloperMode() ? `Unknown (code ${status})` : "Unknown";
 }
 
 function transactionModeLabel(mode) {
@@ -862,5 +983,25 @@ function transactionModeLabel(mode) {
     return "-";
   }
 
-  return isDeveloperMode() ? `Mode code ${mode}` : "Transaction";
+  const labels = {
+    0: "Fixed Price Sale",
+    1: "Bidding Auction",
+    2: "Sealed-bid Auction",
+  };
+  if (Object.hasOwn(labels, mode)) {
+    return isDeveloperMode() ? `${labels[mode]} (code ${mode})` : labels[mode];
+  }
+
+  return isDeveloperMode() ? `Unknown (code ${mode})` : "Unknown";
+}
+
+function transactionCurrentPrice(transaction) {
+  if (transaction.transactionMode === 0) {
+    return displayValue(transaction.fixedPrice);
+  }
+  if (transaction.currentHighestBid) {
+    return displayValue(transaction.currentHighestBid);
+  }
+
+  return displayValue(transaction.basicPrice);
 }

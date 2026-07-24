@@ -219,12 +219,14 @@ label {
 
 input,
 textarea,
+select,
 button {
   font: inherit;
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   margin-top: 6px;
   border: 1px solid var(--line);

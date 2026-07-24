@@ -1,6 +1,6 @@
 BIN_DIR := bin
 
-.PHONY: build build-client build-authority build-transaction fmt test clean
+.PHONY: build build-client build-authority build-transaction fmt test test-chaincode clean
 
 build: build-client build-authority build-transaction
 
@@ -17,14 +17,18 @@ build-transaction: $(BIN_DIR)
 	cd transaction-server && go build -o ../$(BIN_DIR)/transaction-server .
 
 fmt:
+	cd chaincode/transaction && gofmt -w .
 	cd client && gofmt -w .
 	cd authority-server && gofmt -w .
 	cd transaction-server && gofmt -w .
 
-test:
+test: test-chaincode
 	cd client && go test ./...
 	cd authority-server && go test ./...
 	cd transaction-server && go test ./...
+
+test-chaincode:
+	cd chaincode/transaction && go test ./...
 
 clean:
 	rm -rf $(BIN_DIR)

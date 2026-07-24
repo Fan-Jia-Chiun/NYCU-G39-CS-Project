@@ -27,21 +27,27 @@ type LoginRequest struct {
 }
 
 func main() {
-	mode := flag.String("mode", "register", "client mode: register or login")
+	mode := flag.String("mode", "register", "client mode")
 	registerURL := flag.String("url", "http://localhost:8081/register", "authority server register endpoint")
 	loginURL := flag.String("loginURL", "http://localhost:8082/login", "transaction server login endpoint")
 	assetURL := flag.String("assetURL", "http://localhost:8082/assets", "transaction server asset registration endpoint")
+	transactionURL := flag.String("transactionURL", "http://localhost:8082/transactions/launch", "transaction launch endpoint")
 	helperAddr := flag.String("helperAddr", "127.0.0.1:8090", "local signing helper listen address")
 	userName := flag.String("userName", "", "user name")
 	idCardNumber := flag.String("idCardNumber", "", "ID card number")
 	email := flag.String("email", "", "email")
 	phone := flag.String("phone", "", "phone")
 	userDID := flag.String("userDID", "", "user DID for login")
+	sellerDID := flag.String("sellerDID", "", "seller DID for transaction launch")
 	sessionToken := flag.String("sessionToken", "", "login session token")
 	assetName := flag.String("assetName", "", "asset name")
 	assetLocation := flag.String("assetLocation", "", "asset location")
 	description := flag.String("description", "", "asset description")
 	photoPath := flag.String("photo", "", "asset photo path")
+	assetID := flag.String("assetID", "", "asset ID for transaction launch")
+	transactionMode := flag.Uint("transactionMode", 0, "transaction mode: 0 fixed price, 1 bidding, 2 sealed bid")
+	basicPrice := flag.Uint("basicPrice", 0, "fixed price or auction starting price")
+	finalizingTime := flag.String("finalizingTime", "", "auction end time in UTC RFC3339")
 	keyDir := flag.String("keyDir", defaultKeyDir(), "directory for the local identity key pair")
 	flag.Parse()
 
@@ -74,8 +80,21 @@ func main() {
 			log.Printf("asset registration request failed: %v", err)
 			os.Exit(1)
 		}
+	case "launch-transaction":
+		if err := runLaunchTransaction(*transactionURL, TransactionLaunchRequest{
+			SessionToken:    *sessionToken,
+			UserDID:         resolvedUserDID,
+			SellerDID:       *sellerDID,
+			AssetID:         *assetID,
+			TransactionMode: *transactionMode,
+			BasicPrice:      *basicPrice,
+			FinalizingTime:  *finalizingTime,
+		}); err != nil {
+			log.Printf("transaction launch request failed: %v", err)
+			os.Exit(1)
+		}
 	case "helper":
-		if err := runHelperServer(*helperAddr, *keyDir, *registerURL, *loginURL, *assetURL); err != nil {
+		if err := runHelperServer(*helperAddr, *keyDir, *registerURL, *loginURL, *assetURL, *transactionURL); err != nil {
 			log.Printf("helper server failed: %v", err)
 			os.Exit(1)
 		}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -129,22 +130,22 @@ func (c *TransactionIdentityRegistryContract) GetByBuyerDID(ctx contractapi.Tran
 	return getTradingIdentity(ctx, userDID)
 }
 
-// GetBySellerDID returns the trading identity mapped to a seller DID.
-// Input: sellerDID. Output: trading identity record.
-func (c *TransactionIdentityRegistryContract) GetBySellerDID(ctx contractapi.TransactionContextInterface, sellerDID string) (*TradingIdentity, error) {
+// GetBySellerDID returns the User DID mapped to a seller DID.
+// Input: sellerDID. Output: User DID.
+func (c *TransactionIdentityRegistryContract) GetBySellerDID(ctx contractapi.TransactionContextInterface, sellerDID string) (string, error) {
 	if err := requireAnyRole(ctx, roleTransactionService, roleVerifier); err != nil {
-		return nil, err
+		return "", err
 	}
 	if err := validateRequired("sellerDID", sellerDID); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	userDID, err := getIndex(ctx, sellerDIDKey(strings.TrimSpace(sellerDID)))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	return getTradingIdentity(ctx, userDID)
+	return userDID, nil
 }
 
 // GetPublicKey returns the public key stored in the trading identity registry.
@@ -337,19 +338,182 @@ func (c *TransactionIdentityRegistryContract) GetAssetCertificate(ctx contractap
 	return getAssetCertificate(ctx, assetAddr)
 }
 
-// GetTradeInfo returns the current state of a trade.
-// Input: tradeID. Output: trade info.
-func (c *TransactionIdentityRegistryContract) GetTradeInfo(ctx contractapi.TransactionContextInterface, tradeID uint) (*TradeInfo, error) {
+// GetOwner returns the current owner User DID for an asset.
+// Input: assetID. Output: owner User DID.
+func (c *TransactionIdentityRegistryContract) GetOwner(ctx contractapi.TransactionContextInterface, assetID string) (string, error) {
+	if err := requireAnyRole(ctx, roleTransactionService, roleVerifier); err != nil {
+		return "", err
+	}
+
+	property, err := getPropertyIndex(ctx, assetID)
+	if err != nil {
+		return "", err
+	}
+
+	return property.OwnerDID, nil
+}
+
+// UpdateStatus updates the legal status stored in an asset certificate.
+// Input: asset certificate address, target status. Output: success.
+func (c *TransactionIdentityRegistryContract) UpdateStatus(ctx contractapi.TransactionContextInterface, assetAddr string, targetStatus int) (bool, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return false, err
+	}
+	if targetStatus < legalStatusNormal || targetStatus > legalStatusRestricted {
+		return false, fmt.Errorf("targetStatus must be between %d and %d", legalStatusNormal, legalStatusRestricted)
+	}
+
+	cert, err := getAssetCertificate(ctx, assetAddr)
+	if err != nil {
+		return false, err
+	}
+
+	now, err := txTimestamp(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	cert.LegalStatus = targetStatus
+	cert.UpdatedAt = now
+	if err := putAssetCertificate(ctx, strings.TrimSpace(assetAddr), cert); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// AddNewTransaction creates a transaction in Reviewing status.
+// Input: assetID, sellerDID. Output: transactionID.
+func (c *TransactionIdentityRegistryContract) AddNewTransaction(ctx contractapi.TransactionContextInterface, assetID string, sellerDID string) (uint, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return 0, err
+	}
+	if err := validateRequired("assetID", assetID); err != nil {
+		return 0, err
+	}
+	if err := validateRequired("sellerDID", sellerDID); err != nil {
+		return 0, err
+	}
+
+	assetID = strings.TrimSpace(assetID)
+	sellerDID = strings.TrimSpace(sellerDID)
+	if _, err := getAssetCertificateAddress(ctx, assetID); err != nil {
+		return 0, err
+	}
+
+	transactionID, err := nextTransactionID(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	info := TransactionInfo{
+		ObjectType:        objectTypeTransactionInfo,
+		TransactionID:     transactionID,
+		AssetID:           assetID,
+		SellerDID:         sellerDID,
+		TransactionStatus: transactionStatusReviewing,
+	}
+	if err := putTransactionInfo(ctx, &info); err != nil {
+		return 0, err
+	}
+
+	return transactionID, nil
+}
+
+// GetTransactionInfo returns the current state of a transaction.
+// Input: transactionID. Output: TransactionInfo.
+func (c *TransactionIdentityRegistryContract) GetTransactionInfo(ctx contractapi.TransactionContextInterface, transactionID uint) (*TransactionInfo, error) {
 	if err := requireAnyRole(ctx, roleTransactionService, roleVerifier); err != nil {
 		return nil, err
 	}
 
-	return getTradeInfo(ctx, tradeID)
+	return getTransactionInfo(ctx, transactionID)
 }
 
-// GetTradeList returns the user's trade IDs, roles, and active flags.
-// Input: userDID. Output: tradeIDList, transactionRoleList, isActiveList.
-func (c *TransactionIdentityRegistryContract) GetTradeList(ctx contractapi.TransactionContextInterface, userDID string) (*TradeListResult, error) {
+// ChangeTransactionStatus updates a transaction status except Reviewing and In Progress.
+// Input: transactionID, newStatus. Output: success.
+func (c *TransactionIdentityRegistryContract) ChangeTransactionStatus(ctx contractapi.TransactionContextInterface, transactionID uint, newStatus uint) (bool, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return false, err
+	}
+	if newStatus > transactionStatusRejected {
+		return false, fmt.Errorf("newStatus must be between %d and %d", transactionStatusReviewing, transactionStatusRejected)
+	}
+	if newStatus == transactionStatusReviewing || newStatus == transactionStatusInProgress {
+		return false, fmt.Errorf("Reviewing and In Progress must be set by AddNewTransaction and StartTransaction")
+	}
+
+	info, err := getTransactionInfo(ctx, transactionID)
+	if err != nil {
+		return false, err
+	}
+	info.TransactionStatus = newStatus
+	if err := putTransactionInfo(ctx, info); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// StartTransaction sets mode-specific transaction data and changes the status to In Progress.
+// Input: transactionID, price, transactionMode, finalizingTime. Output: success.
+func (c *TransactionIdentityRegistryContract) StartTransaction(ctx contractapi.TransactionContextInterface, transactionID uint, basicPrice uint, transactionMode uint, finalizingTime TimeInfo) (bool, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return false, err
+	}
+	if basicPrice == 0 {
+		return false, fmt.Errorf("basicPrice must be greater than zero")
+	}
+	if transactionMode > transactionModeSealedBid {
+		return false, fmt.Errorf("transactionMode must be 0, 1, or 2")
+	}
+
+	info, err := getTransactionInfo(ctx, transactionID)
+	if err != nil {
+		return false, err
+	}
+	if info.TransactionStatus != transactionStatusReviewing {
+		return false, fmt.Errorf("transaction must be in Reviewing status")
+	}
+
+	startTime, startAt, err := transactionTimeInfo(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	info.TransactionMode = transactionMode
+	info.StartTime = startTime
+	info.FixedPrice = 0
+	info.BasicPrice = 0
+	info.CurrentHighestBid = 0
+	info.FinalizingTime = TimeInfo{}
+
+	switch transactionMode {
+	case transactionModeFixedPrice:
+		info.FixedPrice = basicPrice
+	case transactionModeBidding, transactionModeSealedBid:
+		finalizesAt, err := validateTransactionTimeInfo(finalizingTime)
+		if err != nil {
+			return false, fmt.Errorf("invalid finalizingTime: %w", err)
+		}
+		if !finalizesAt.After(startAt) {
+			return false, fmt.Errorf("finalizingTime must be after the transaction start time")
+		}
+		info.BasicPrice = basicPrice
+		info.FinalizingTime = finalizingTime
+	}
+
+	info.TransactionStatus = transactionStatusInProgress
+	if err := putTransactionInfo(ctx, info); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// GetTransactionList returns transaction IDs, asset IDs, roles, and active flags.
+// Input: userDID. Output: parallel transaction list fields.
+func (c *TransactionIdentityRegistryContract) GetTransactionList(ctx contractapi.TransactionContextInterface, userDID string) (*TradeListResult, error) {
 	if err := requireAnyRole(ctx, roleTransactionService, roleVerifier); err != nil {
 		return nil, err
 	}
@@ -360,15 +524,16 @@ func (c *TransactionIdentityRegistryContract) GetTradeList(ctx contractapi.Trans
 	}
 
 	return &TradeListResult{
-		TradeIDList:         list.TradeIDList,
+		TransactionIDList:   list.TransactionIDList,
+		AssetIDList:         list.AssetIDList,
 		TransactionRoleList: list.TransactionRoleList,
 		IsActiveList:        list.IsActiveList,
 	}, nil
 }
 
-// UpdateTradeList inserts a trade record or updates its active status.
-// Input: userDID, tradeID, assetID, transactionRole, isActive. Output: success.
-func (c *TransactionIdentityRegistryContract) UpdateTradeList(ctx contractapi.TransactionContextInterface, userDID string, tradeID uint, assetID string, transactionRole uint, isActive bool) (bool, error) {
+// UpdateTransactionList inserts a transaction record or updates its active status.
+// Input: userDID, transactionID, assetID, transactionRole, isActive. Output: success.
+func (c *TransactionIdentityRegistryContract) UpdateTransactionList(ctx contractapi.TransactionContextInterface, userDID string, transactionID uint, assetID string, transactionRole uint, isActive bool) (bool, error) {
 	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
 		return false, err
 	}
@@ -378,8 +543,8 @@ func (c *TransactionIdentityRegistryContract) UpdateTradeList(ctx contractapi.Tr
 		return false, err
 	}
 
-	for i, existingTradeID := range list.TradeIDList {
-		if existingTradeID == tradeID {
+	for i, existingTransactionID := range list.TransactionIDList {
+		if existingTransactionID == transactionID {
 			list.IsActiveList[i] = isActive
 			if err := putUserTransactionList(ctx, list); err != nil {
 				return false, err
@@ -392,11 +557,11 @@ func (c *TransactionIdentityRegistryContract) UpdateTradeList(ctx contractapi.Tr
 	if err := validateRequired("assetID", assetID); err != nil {
 		return false, err
 	}
-	if transactionRole > 2 {
+	if transactionRole > transactionRoleSeller {
 		return false, fmt.Errorf("transactionRole must be 0, 1, or 2")
 	}
 
-	list.TradeIDList = append(list.TradeIDList, tradeID)
+	list.TransactionIDList = append(list.TransactionIDList, transactionID)
 	list.AssetIDList = append(list.AssetIDList, strings.TrimSpace(assetID))
 	list.TransactionRoleList = append(list.TransactionRoleList, transactionRole)
 	list.IsActiveList = append(list.IsActiveList, isActive)
@@ -443,9 +608,9 @@ func propertyIndexKey(assetID string) string {
 	return "PROPERTY_INDEX:" + assetID
 }
 
-// tradeInfoKey builds the ledger key for a trade info record.
-func tradeInfoKey(tradeID uint) string {
-	return fmt.Sprintf("TRADE_INFO:%d", tradeID)
+// transactionInfoKey builds the ledger key for a transaction record.
+func transactionInfoKey(transactionID uint) string {
+	return fmt.Sprintf("TRANSACTION_INFO:%d", transactionID)
 }
 
 // userTransactionListKey builds the ledger key for a user's transaction list.
@@ -569,6 +734,24 @@ func getAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr 
 	return &cert, nil
 }
 
+// getAssetCertificateAddress resolves an asset ID to its certificate address.
+func getAssetCertificateAddress(ctx contractapi.TransactionContextInterface, assetID string) (string, error) {
+	if err := validateRequired("assetID", assetID); err != nil {
+		return "", err
+	}
+
+	assetID = strings.TrimSpace(assetID)
+	data, err := ctx.GetStub().GetState(assetCertAddrKey(assetID))
+	if err != nil {
+		return "", fmt.Errorf("failed to read asset certificate address: %w", err)
+	}
+	if data == nil {
+		return "", fmt.Errorf("asset certificate address not found for asset: %s", assetID)
+	}
+
+	return string(data), nil
+}
+
 // putAssetCertificate writes an asset certificate to world state.
 func putAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr string, cert *AssetCertificate) error {
 	data, err := json.Marshal(cert)
@@ -581,6 +764,29 @@ func putAssetCertificate(ctx contractapi.TransactionContextInterface, assetAddr 
 	}
 
 	return nil
+}
+
+// getPropertyIndex reads an asset owner record.
+func getPropertyIndex(ctx contractapi.TransactionContextInterface, assetID string) (*PropertyIndex, error) {
+	if err := validateRequired("assetID", assetID); err != nil {
+		return nil, err
+	}
+
+	assetID = strings.TrimSpace(assetID)
+	data, err := ctx.GetStub().GetState(propertyIndexKey(assetID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read property index: %w", err)
+	}
+	if data == nil {
+		return nil, fmt.Errorf("property index not found for asset: %s", assetID)
+	}
+
+	var property PropertyIndex
+	if err := json.Unmarshal(data, &property); err != nil {
+		return nil, fmt.Errorf("failed to decode property index: %w", err)
+	}
+
+	return &property, nil
 }
 
 // putPropertyIndex writes a property index record to world state.
@@ -597,23 +803,63 @@ func putPropertyIndex(ctx contractapi.TransactionContextInterface, property *Pro
 	return nil
 }
 
-// getTradeInfo reads a trade info record by trade ID.
-func getTradeInfo(ctx contractapi.TransactionContextInterface, tradeID uint) (*TradeInfo, error) {
-	data, err := ctx.GetStub().GetState(tradeInfoKey(tradeID))
+// getTransactionInfo reads a transaction record by transaction ID.
+func getTransactionInfo(ctx contractapi.TransactionContextInterface, transactionID uint) (*TransactionInfo, error) {
+	data, err := ctx.GetStub().GetState(transactionInfoKey(transactionID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read trade info: %w", err)
+		return nil, fmt.Errorf("failed to read transaction info: %w", err)
 	}
 	if data == nil {
-		return nil, fmt.Errorf("trade info not found: %d", tradeID)
+		return nil, fmt.Errorf("transaction info not found: %d", transactionID)
 	}
 
-	var info TradeInfo
+	var info TransactionInfo
 	if err := json.Unmarshal(data, &info); err != nil {
-		return nil, fmt.Errorf("failed to decode trade info: %w", err)
+		return nil, fmt.Errorf("failed to decode transaction info: %w", err)
 	}
-	info.TradeID = tradeID
+	info.TransactionID = transactionID
 
 	return &info, nil
+}
+
+// putTransactionInfo writes a transaction record to world state.
+func putTransactionInfo(ctx contractapi.TransactionContextInterface, info *TransactionInfo) error {
+	data, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("failed to encode transaction info: %w", err)
+	}
+
+	if err := ctx.GetStub().PutState(transactionInfoKey(info.TransactionID), data); err != nil {
+		return fmt.Errorf("failed to write transaction info: %w", err)
+	}
+
+	return nil
+}
+
+// nextTransactionID increments the deterministic ledger transaction counter.
+func nextTransactionID(ctx contractapi.TransactionContextInterface) (uint, error) {
+	data, err := ctx.GetStub().GetState(transactionCounterKey)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read transaction counter: %w", err)
+	}
+
+	var current uint64
+	if data != nil {
+		current, err = strconv.ParseUint(string(data), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decode transaction counter: %w", err)
+		}
+	}
+	current++
+	if current == 0 || uint64(uint(current)) != current {
+		return 0, fmt.Errorf("transaction counter exceeds supported uint range")
+	}
+
+	if err := ctx.GetStub().PutState(transactionCounterKey, []byte(strconv.FormatUint(current, 10))); err != nil {
+		return 0, fmt.Errorf("failed to write transaction counter: %w", err)
+	}
+
+	return uint(current), nil
 }
 
 // getUserTransactionList reads a user's transaction list, returning an empty list when absent.
@@ -631,7 +877,7 @@ func getUserTransactionList(ctx contractapi.TransactionContextInterface, userDID
 		return &UserTransactionList{
 			ObjectType:          objectTypeUserTradeList,
 			UserDID:             userDID,
-			TradeIDList:         []uint{},
+			TransactionIDList:   []uint{},
 			AssetIDList:         []string{},
 			TransactionRoleList: []uint{},
 			IsActiveList:        []bool{},
@@ -642,8 +888,8 @@ func getUserTransactionList(ctx contractapi.TransactionContextInterface, userDID
 	if err := json.Unmarshal(data, &list); err != nil {
 		return nil, fmt.Errorf("failed to decode user transaction list: %w", err)
 	}
-	if list.TradeIDList == nil {
-		list.TradeIDList = []uint{}
+	if list.TransactionIDList == nil {
+		list.TransactionIDList = []uint{}
 	}
 	if list.AssetIDList == nil {
 		list.AssetIDList = []string{}
@@ -654,7 +900,9 @@ func getUserTransactionList(ctx contractapi.TransactionContextInterface, userDID
 	if list.IsActiveList == nil {
 		list.IsActiveList = []bool{}
 	}
-	if len(list.TradeIDList) != len(list.TransactionRoleList) || len(list.TradeIDList) != len(list.IsActiveList) {
+	if len(list.TransactionIDList) != len(list.AssetIDList) ||
+		len(list.TransactionIDList) != len(list.TransactionRoleList) ||
+		len(list.TransactionIDList) != len(list.IsActiveList) {
 		return nil, fmt.Errorf("user transaction list has inconsistent field lengths")
 	}
 
@@ -761,4 +1009,51 @@ func txTimestamp(ctx contractapi.TransactionContextInterface) (string, error) {
 	}
 
 	return time.Unix(ts.Seconds, int64(ts.Nanos)).UTC().Format(time.RFC3339Nano), nil
+}
+
+// transactionTimeInfo returns the Fabric transaction timestamp in TimeInfo form.
+func transactionTimeInfo(ctx contractapi.TransactionContextInterface) (TimeInfo, time.Time, error) {
+	ts, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return TimeInfo{}, time.Time{}, fmt.Errorf("failed to read transaction timestamp: %w", err)
+	}
+
+	value := time.Unix(ts.Seconds, int64(ts.Nanos)).UTC()
+
+	return TimeInfo{
+		Year:   uint(value.Year()),
+		Month:  uint(value.Month()),
+		Day:    uint(value.Day()),
+		Hour:   uint(value.Hour()),
+		Minute: uint(value.Minute()),
+		Second: uint(value.Second()),
+	}, value, nil
+}
+
+// validateTransactionTimeInfo validates a complete date and time value.
+func validateTransactionTimeInfo(value TimeInfo) (time.Time, error) {
+	if value.Year == 0 || value.Month == 0 || value.Day == 0 {
+		return time.Time{}, fmt.Errorf("year, month, and day are required")
+	}
+	if value.Hour > 23 || value.Minute > 59 || value.Second > 59 {
+		return time.Time{}, fmt.Errorf("time fields are out of range")
+	}
+
+	result := time.Date(
+		int(value.Year),
+		time.Month(value.Month),
+		int(value.Day),
+		int(value.Hour),
+		int(value.Minute),
+		int(value.Second),
+		0,
+		time.UTC,
+	)
+	if result.Year() != int(value.Year) ||
+		uint(result.Month()) != value.Month ||
+		uint(result.Day()) != value.Day {
+		return time.Time{}, fmt.Errorf("date fields are invalid")
+	}
+
+	return result, nil
 }

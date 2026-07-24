@@ -15,11 +15,6 @@ const (
 	accountStatusAvailable    uint = 0
 	accountStatusDisabled     uint = 1
 	accountStatusDeregistered uint = 2
-
-	transactionStatusCompleted uint = 5
-	transactionStatusCancelled uint = 6
-	transactionStatusReturned  uint = 9
-	transactionStatusRejected  uint = 10
 )
 
 type LoginRequest struct {
@@ -78,23 +73,32 @@ type TradeLoginInfo struct {
 }
 
 type TradeInfo struct {
-	TradeID             uint   `json:"tradeID,omitempty"`
-	AssetID             string `json:"assetID"`
-	TransactionStatus   uint   `json:"transactionStatus"`
-	TransactionMode     uint   `json:"transactionMode"`
-	CurrentHighestPrice uint   `json:"currentHighestPrice"`
+	ObjectType          string   `json:"objectType,omitempty"`
+	TransactionID       uint     `json:"transactionID,omitempty"`
+	AssetID             string   `json:"assetID"`
+	SellerDID           string   `json:"sellerDID,omitempty"`
+	TransactionStatus   uint     `json:"transactionStatus"`
+	TransactionMode     uint     `json:"transactionMode"`
+	StartTime           TimeInfo `json:"startTime"`
+	FixedPrice          uint     `json:"fixedPrice"`
+	BasicPrice          uint     `json:"basicPrice"`
+	CurrentHighestBid   uint     `json:"currentHighestBid"`
+	FinalizingTime      TimeInfo `json:"finalizingTime"`
+	LogisticsRecordAddr string   `json:"logisticsRecordAddr,omitempty"`
 }
 
 type TradeListResult struct {
-	TradeIDList         []uint `json:"tradeIDList"`
-	TransactionRoleList []uint `json:"transactionRoleList"`
-	IsActiveList        []bool `json:"isActiveList"`
+	TransactionIDList   []uint   `json:"transactionIDList"`
+	AssetIDList         []string `json:"assetIDList"`
+	TransactionRoleList []uint   `json:"transactionRoleList"`
+	IsActiveList        []bool   `json:"isActiveList"`
 }
 
 type TradingIdentityRecord struct {
 	UserDID           string `json:"userDID"`
 	BuyerDID          string `json:"buyerDID"`
 	SellerDID         string `json:"sellerDID"`
+	PublicKey         string `json:"publicKey"`
 	AccountStatus     uint   `json:"accountStatus"`
 	BuyerCreditScore  uint   `json:"buyerCreditScore"`
 	SellerCreditScore uint   `json:"sellerCreditScore"`
@@ -122,8 +126,6 @@ type loginInitializer func(userDID string) (*LoginInitializationData, error)
 type ipfsReader interface {
 	Cat(ctx context.Context, cid string) ([]byte, error)
 }
-
-var currentActiveTransactionCache = []TradeInfo{}
 
 func loginHandler(fabricGateway *FabricGateway, ipfs ipfsReader) http.HandlerFunc {
 	return loginHandlerWithDependencies(
@@ -286,7 +288,7 @@ func loadLoginInitialization(fabricGateway *FabricGateway, ipfs ipfsReader, user
 		Assets:                    assets,
 		ActiveTrades:              activeTrades,
 		HistoricalTrades:          historicalTrades,
-		CurrentActiveTransactions: append([]TradeInfo(nil), currentActiveTransactionCache...),
+		CurrentActiveTransactions: currentActiveTransactions.Snapshot(),
 	}, nil
 }
 
@@ -409,11 +411,14 @@ func readAssetInfoFromIPFS(ipfs ipfsReader, assetInfoCID string) AssetInfo {
 
 func evaluateUserTrades(fabricGateway *FabricGateway, userDID string) ([]TradeLoginInfo, []TradeLoginInfo, error) {
 	var tradeList TradeListResult
-	if err := evaluateJSON(fabricGateway, &tradeList, "GetTradeList", userDID); err != nil {
+	if err := evaluateJSON(fabricGateway, &tradeList, "GetTransactionList", userDID); err != nil {
 		return nil, nil, err
 	}
-	if tradeList.TradeIDList == nil {
-		tradeList.TradeIDList = []uint{}
+	if tradeList.TransactionIDList == nil {
+		tradeList.TransactionIDList = []uint{}
+	}
+	if tradeList.AssetIDList == nil {
+		tradeList.AssetIDList = []string{}
 	}
 	if tradeList.TransactionRoleList == nil {
 		tradeList.TransactionRoleList = []uint{}
@@ -421,28 +426,30 @@ func evaluateUserTrades(fabricGateway *FabricGateway, userDID string) ([]TradeLo
 	if tradeList.IsActiveList == nil {
 		tradeList.IsActiveList = []bool{}
 	}
-	if len(tradeList.TradeIDList) != len(tradeList.TransactionRoleList) || len(tradeList.TradeIDList) != len(tradeList.IsActiveList) {
+	if len(tradeList.TransactionIDList) != len(tradeList.AssetIDList) ||
+		len(tradeList.TransactionIDList) != len(tradeList.TransactionRoleList) ||
+		len(tradeList.TransactionIDList) != len(tradeList.IsActiveList) {
 		return nil, nil, fmt.Errorf("trade list has inconsistent field lengths")
 	}
 
 	activeTrades := []TradeLoginInfo{}
 	historicalTrades := []TradeLoginInfo{}
-	for i, tradeID := range tradeList.TradeIDList {
+	for i, transactionID := range tradeList.TransactionIDList {
 		var tradeInfo TradeInfo
-		if err := evaluateJSON(fabricGateway, &tradeInfo, "GetTradeInfo", strconv.FormatUint(uint64(tradeID), 10)); err != nil {
+		if err := evaluateJSON(fabricGateway, &tradeInfo, "GetTransactionInfo", strconv.FormatUint(uint64(transactionID), 10)); err != nil {
 			return nil, nil, err
 		}
-		tradeInfo.TradeID = tradeID
+		tradeInfo.TransactionID = transactionID
 
 		actualActive := isTradeStatusActive(tradeInfo.TransactionStatus)
 		if actualActive != tradeList.IsActiveList[i] {
-			if err := updateTradeActiveStatus(fabricGateway, userDID, tradeID, tradeInfo.AssetID, tradeList.TransactionRoleList[i], actualActive); err != nil {
+			if err := updateTradeActiveStatus(fabricGateway, userDID, transactionID, tradeList.AssetIDList[i], tradeList.TransactionRoleList[i], actualActive); err != nil {
 				return nil, nil, err
 			}
 		}
 
 		entry := TradeLoginInfo{
-			TradeID:         tradeID,
+			TradeID:         transactionID,
 			TransactionRole: tradeList.TransactionRoleList[i],
 			IsActive:        actualActive,
 			TradeInfo:       tradeInfo,
@@ -457,11 +464,11 @@ func evaluateUserTrades(fabricGateway *FabricGateway, userDID string) ([]TradeLo
 	return activeTrades, historicalTrades, nil
 }
 
-func updateTradeActiveStatus(fabricGateway *FabricGateway, userDID string, tradeID uint, assetID string, transactionRole uint, isActive bool) error {
+func updateTradeActiveStatus(fabricGateway *FabricGateway, userDID string, transactionID uint, assetID string, transactionRole uint, isActive bool) error {
 	_, err := fabricGateway.Contract.SubmitTransaction(
-		"UpdateTradeList",
+		"UpdateTransactionList",
 		userDID,
-		strconv.FormatUint(uint64(tradeID), 10),
+		strconv.FormatUint(uint64(transactionID), 10),
 		assetID,
 		strconv.FormatUint(uint64(transactionRole), 10),
 		strconv.FormatBool(isActive),
