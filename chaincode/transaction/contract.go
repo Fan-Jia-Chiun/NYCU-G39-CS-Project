@@ -367,6 +367,13 @@ func (c *TransactionIdentityRegistryContract) UpdateStatus(ctx contractapi.Trans
 	if err != nil {
 		return false, err
 	}
+	if !legalStatusTransitionAllowed(cert.LegalStatus, targetStatus) {
+		return false, fmt.Errorf(
+			"legal status transition from %d to %d is not allowed",
+			cert.LegalStatus,
+			targetStatus,
+		)
+	}
 
 	now, err := txTimestamp(ctx)
 	if err != nil {
@@ -430,22 +437,28 @@ func (c *TransactionIdentityRegistryContract) GetTransactionInfo(ctx contractapi
 	return getTransactionInfo(ctx, transactionID)
 }
 
-// ChangeTransactionStatus updates a transaction status except Reviewing and In Progress.
-// Input: transactionID, newStatus. Output: success.
-func (c *TransactionIdentityRegistryContract) ChangeTransactionStatus(ctx contractapi.TransactionContextInterface, transactionID uint, newStatus uint) (bool, error) {
+// ChangeTransactionStatus updates a transaction when its current status matches the expected status.
+// Input: transactionID, originalStatus, newStatus. Output: success.
+func (c *TransactionIdentityRegistryContract) ChangeTransactionStatus(ctx contractapi.TransactionContextInterface, transactionID uint, originalStatus uint, newStatus uint) (bool, error) {
 	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
 		return false, err
+	}
+	if originalStatus > transactionStatusRejected {
+		return false, fmt.Errorf("originalStatus must be between %d and %d", transactionStatusReviewing, transactionStatusRejected)
 	}
 	if newStatus > transactionStatusRejected {
 		return false, fmt.Errorf("newStatus must be between %d and %d", transactionStatusReviewing, transactionStatusRejected)
 	}
 	if newStatus == transactionStatusReviewing || newStatus == transactionStatusInProgress {
-		return false, fmt.Errorf("Reviewing and In Progress must be set by AddNewTransaction and StartTransaction")
+		return false, nil
 	}
 
 	info, err := getTransactionInfo(ctx, transactionID)
 	if err != nil {
 		return false, err
+	}
+	if info.TransactionStatus != originalStatus {
+		return false, nil
 	}
 	info.TransactionStatus = newStatus
 	if err := putTransactionInfo(ctx, info); err != nil {
@@ -453,6 +466,31 @@ func (c *TransactionIdentityRegistryContract) ChangeTransactionStatus(ctx contra
 	}
 
 	return true, nil
+}
+
+// CheckSellerEligibility checks whether a seller may launch a transaction at the target price.
+// Input: sellerDID, targetPrice. Output: eligibility.
+func (c *TransactionIdentityRegistryContract) CheckSellerEligibility(ctx contractapi.TransactionContextInterface, sellerDID string, targetPrice uint) (bool, error) {
+	if err := requireAnyRole(ctx, roleTransactionService); err != nil {
+		return false, err
+	}
+	if err := validateRequired("sellerDID", sellerDID); err != nil {
+		return false, err
+	}
+	if targetPrice == 0 {
+		return false, fmt.Errorf("targetPrice must be greater than zero")
+	}
+
+	userDID, err := c.GetBySellerDID(ctx, strings.TrimSpace(sellerDID))
+	if err != nil {
+		return false, err
+	}
+	scores, err := c.GetCreditScores(ctx, userDID)
+	if err != nil {
+		return false, err
+	}
+
+	return sellerPriceEligible(scores.SellerCreditScore, targetPrice), nil
 }
 
 // StartTransaction sets mode-specific transaction data and changes the status to In Progress.
@@ -474,6 +512,33 @@ func (c *TransactionIdentityRegistryContract) StartTransaction(ctx contractapi.T
 	}
 	if info.TransactionStatus != transactionStatusReviewing {
 		return false, fmt.Errorf("transaction must be in Reviewing status")
+	}
+
+	eligible, err := c.CheckSellerEligibility(ctx, info.SellerDID, basicPrice)
+	if err != nil {
+		return false, err
+	}
+	if !eligible {
+		return false, nil
+	}
+
+	assetAddr, err := getAssetCertificateAddress(ctx, info.AssetID)
+	if err != nil {
+		return false, err
+	}
+	cert, err := getAssetCertificate(ctx, assetAddr)
+	if err != nil {
+		return false, err
+	}
+	expectedLegalStatus := legalStatusSelling
+	if transactionMode != transactionModeFixedPrice {
+		expectedLegalStatus = legalStatusBidding
+	}
+	if cert.LegalStatus != expectedLegalStatus {
+		return false, fmt.Errorf(
+			"asset legal status must be %d before starting this transaction mode",
+			expectedLegalStatus,
+		)
 	}
 
 	startTime, startAt, err := transactionTimeInfo(ctx)
@@ -509,6 +574,23 @@ func (c *TransactionIdentityRegistryContract) StartTransaction(ctx contractapi.T
 	}
 
 	return true, nil
+}
+
+func legalStatusTransitionAllowed(originalStatus int, targetStatus int) bool {
+	if originalStatus == targetStatus {
+		return false
+	}
+
+	switch targetStatus {
+	case legalStatusPending:
+		return originalStatus == legalStatusNormal
+	case legalStatusSelling, legalStatusBidding:
+		return originalStatus == legalStatusPending
+	case legalStatusNormal:
+		return originalStatus != legalStatusNormal
+	default:
+		return true
+	}
 }
 
 // GetTransactionList returns transaction IDs, asset IDs, roles, and active flags.

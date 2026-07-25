@@ -15,8 +15,17 @@ const (
 	roleVerifier           = "verifier"
 
 	accountStatusAvailable   uint = 0
-	defaultBuyerCreditScore  uint = 80
-	defaultSellerCreditScore uint = 80
+	defaultBuyerCreditScore  uint = 60
+	defaultSellerCreditScore uint = 60
+
+	sellerCreditGradeAMinimumScore uint = 90
+	sellerCreditGradeBMinimumScore uint = 80
+	sellerCreditGradeCMinimumScore uint = 70
+	sellerCreditGradeDMinimumScore uint = 60
+
+	sellerCreditGradeBMaximumPrice uint = 1_000_000
+	sellerCreditGradeCMaximumPrice uint = 300_000
+	sellerCreditGradeDMaximumPrice uint = 100_000
 
 	legalStatusNormal             int = 0
 	legalStatusPending            int = 1
@@ -114,7 +123,7 @@ type TransactionInfo struct {
 	BasicPrice          uint     `json:"basicPrice"`
 	CurrentHighestBid   uint     `json:"currentHighestBid"`
 	FinalizingTime      TimeInfo `json:"finalizingTime"`
-	LogisticsRecordAddr string   `json:"logisticsRecordAddr,omitempty"`
+	LogisticsRecordAddr string   `json:"logisticsRecordAddr"`
 }
 
 type UserTransactionList struct {

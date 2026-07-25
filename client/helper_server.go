@@ -471,7 +471,7 @@ func (s helperServer) apiTransactionLaunchHandler(w http.ResponseWriter, r *http
 		return
 	}
 	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
-		forwardUpstreamError(w, statusCode, body, "transaction server rejected transaction launch")
+		writeRawJSON(w, statusCode, body)
 		return
 	}
 

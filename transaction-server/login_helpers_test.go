@@ -314,6 +314,14 @@ func TestLoginHandlerReturnsInitializationData(t *testing.T) {
 	if got.CreditScores.BuyerCreditScore != 80 || got.CreditScores.SellerCreditScore != 90 {
 		t.Fatalf("credit scores = %+v", got.CreditScores)
 	}
+	if got.SellerCreditPolicy.Current.Grade != "A" ||
+		!got.SellerCreditPolicy.Current.CanLaunch ||
+		!got.SellerCreditPolicy.Current.Unlimited {
+		t.Fatalf("seller credit policy = %+v", got.SellerCreditPolicy)
+	}
+	if len(got.SellerCreditPolicy.Rules) != 5 {
+		t.Fatalf("seller credit rules = %+v", got.SellerCreditPolicy.Rules)
+	}
 	if len(got.Assets) != 1 ||
 		got.Assets[0].AssetName != "House" ||
 		got.Assets[0].AssetLocation != "Taipei" ||

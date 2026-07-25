@@ -7,6 +7,7 @@ const state = {
   uiMode: localStorage.getItem("demo.uiMode") || "developer",
   photoHash: "",
   lastLoginResponse: {},
+  sellerCreditPolicy: null,
 };
 
 const el = {
@@ -69,6 +70,13 @@ const el = {
   transactionAssetID: document.querySelector("#transactionAssetID"),
   transactionMode: document.querySelector("#transactionMode"),
   basicPrice: document.querySelector("#basicPrice"),
+  transactionPriceLabel: document.querySelector("#transactionPriceLabel"),
+  launchSellerCreditScore: document.querySelector("#launchSellerCreditScore"),
+  sellerCreditGrade: document.querySelector("#sellerCreditGrade"),
+  sellerMaximumPrice: document.querySelector("#sellerMaximumPrice"),
+  sellerCreditPolicyMessage: document.querySelector("#sellerCreditPolicyMessage"),
+  sellerCreditRulesBody: document.querySelector("#sellerCreditRulesBody"),
+  transactionPriceQualification: document.querySelector("#transactionPriceQualification"),
   finalizingTimeField: document.querySelector("#finalizingTimeField"),
   finalizingTime: document.querySelector("#finalizingTime"),
   launchTransactionButton: document.querySelector("#launchTransactionButton"),
@@ -89,6 +97,7 @@ function init() {
   el.sessionToken.value = state.sessionToken;
   renderCachedDIDs("cache not loaded");
   renderLoginInitialization({});
+  renderSellerCreditPolicy(null);
   applyUIMode(state.uiMode);
 
   el.userModeButton.addEventListener("click", () => setUIMode("user"));
@@ -102,6 +111,7 @@ function init() {
   el.registerAssetButton.addEventListener("click", registerAsset);
   el.launchTransactionButton.addEventListener("click", launchTransaction);
   el.transactionMode.addEventListener("change", updateTransactionModeFields);
+  el.basicPrice.addEventListener("input", updateSellerPriceQualification);
   el.photo.addEventListener("change", updatePhotoHash);
   el.saveIdentityFolderButton.addEventListener("click", saveIdentityToFolder);
   el.identityFile.addEventListener("change", loadSelectedIdentityFile);
@@ -224,6 +234,8 @@ async function login() {
     renderLoginUserDID(state.userDID);
     el.buyerCreditScore.textContent = response.creditScores?.buyerCreditScore ?? "-";
     el.sellerCreditScore.textContent = response.creditScores?.sellerCreditScore ?? "-";
+    state.sellerCreditPolicy = response.sellerCreditPolicy || null;
+    renderSellerCreditPolicy(state.sellerCreditPolicy);
     el.verifiedBuyerDID.textContent = response.buyerDID || "-";
     el.verifiedSellerDID.textContent = response.sellerDID || "-";
     renderValueWithNote(el.sessionExpiration, formatTaipeiDateTime(response.expiresAt || response.sessionExpiresAt), "UTC+8");
@@ -400,6 +412,8 @@ function updateTransactionModeFields() {
   const auctionMode = mode === 1 || mode === 2;
   el.finalizingTimeField.hidden = !auctionMode;
   el.finalizingTime.required = auctionMode;
+  el.transactionPriceLabel.textContent = auctionMode ? "Starting Price" : "Sale Price";
+  updateSellerPriceQualification();
 }
 
 async function launchTransaction() {
@@ -432,6 +446,16 @@ async function launchTransaction() {
     });
     return;
   }
+  const qualification = currentSellerPriceQualification();
+  if (!qualification.eligible) {
+    setStatus(el.transactionState, "bad", "Not eligible");
+    renderJSON(el.transactionResult, {
+      success: false,
+      message: qualification.message,
+      sellerPriceQualification: qualification,
+    });
+    return;
+  }
 
   setStatus(el.transactionState, "busy", "Reviewing");
   el.launchTransactionButton.disabled = true;
@@ -442,15 +466,143 @@ async function launchTransaction() {
     el.launchedTransactionStatus.textContent = transactionStatusLabel(response.transactionStatus);
     el.launchedLegalStatus.textContent = legalStatusLabel(response.legalStatus);
     el.transactionReviewReason.textContent = response.reviewReason || "-";
+    if (response.sellerPriceQualification) {
+      renderSellerPriceQualification(response.sellerPriceQualification);
+    }
     renderJSON(el.transactionResult, response);
     setStatus(el.transactionState, response.approved ? "ok" : "bad", response.approved ? "Approved" : "Rejected");
   } catch (error) {
     renderJSON(el.transactionResult, errorPayload(error));
-    el.transactionMessage.textContent = "Failure";
+    el.transactionMessage.textContent = error.body?.message || error.message || "Failure";
+    if (error.body?.sellerPriceQualification) {
+      renderSellerPriceQualification(error.body.sellerPriceQualification);
+    }
     setStatus(el.transactionState, "bad", "Failed");
   } finally {
-    el.launchTransactionButton.disabled = false;
+    updateSellerPriceQualification();
   }
+}
+
+function renderSellerCreditPolicy(policy) {
+  const current = policy?.current;
+  el.launchSellerCreditScore.textContent = current ? displayValue(current.score) : "Log in to load";
+  el.sellerCreditGrade.textContent = current?.grade || "-";
+  el.sellerMaximumPrice.textContent = current
+    ? current.unlimited
+      ? "No limit"
+      : current.canLaunch
+        ? formatTWD(current.maximumPrice)
+        : "Not permitted"
+    : "-";
+  el.sellerCreditPolicyMessage.textContent =
+    current?.message || "Log in to load the current seller credit policy.";
+
+  const rules = Array.isArray(policy?.rules) ? policy.rules : [];
+  el.sellerCreditRulesBody.replaceChildren();
+  if (!rules.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = "Log in to load the seller credit standards.";
+    row.append(cell);
+    el.sellerCreditRulesBody.append(row);
+  } else {
+    rules.forEach((rule) => {
+      const row = document.createElement("tr");
+      appendTextCell(row, rule.grade);
+      appendTextCell(row, `${rule.minimumScore}-${rule.maximumScore}`);
+      appendTextCell(row, rule.unlimited ? "No limit" : rule.canLaunch ? formatTWD(rule.maximumPrice) : "-");
+      appendTextCell(row, rule.canLaunch ? "Permitted" : "Not permitted");
+      el.sellerCreditRulesBody.append(row);
+    });
+  }
+
+  updateSellerPriceQualification();
+}
+
+function currentSellerPriceQualification() {
+  const current = state.sellerCreditPolicy?.current;
+  const price = Number(el.basicPrice.value);
+  const priceField = Number(el.transactionMode.value) === 0 ? "sale price" : "starting price";
+  if (!current) {
+    return {
+      eligible: false,
+      price,
+      priceField,
+      message: "Log in to load and verify the seller credit qualification.",
+    };
+  }
+  if (!current.canLaunch) {
+    return {
+      eligible: false,
+      price,
+      priceField,
+      grade: current.grade,
+      message: "The current seller credit score is below the transaction launch threshold.",
+    };
+  }
+  if (!Number.isSafeInteger(price) || price <= 0) {
+    return {
+      eligible: false,
+      price,
+      priceField,
+      grade: current.grade,
+      message: `${capitalize(priceField)} must be a positive whole number.`,
+    };
+  }
+  if (!current.unlimited && price > Number(current.maximumPrice)) {
+    return {
+      eligible: false,
+      price,
+      priceField,
+      grade: current.grade,
+      maximumPrice: current.maximumPrice,
+      message: `${capitalize(priceField)} exceeds the maximum price allowed for seller credit grade ${current.grade}.`,
+    };
+  }
+
+  return {
+    eligible: true,
+    price,
+    priceField,
+    grade: current.grade,
+    unlimited: Boolean(current.unlimited),
+    maximumPrice: current.maximumPrice,
+    message: `${capitalize(priceField)} is within the limit for seller credit grade ${current.grade}.`,
+  };
+}
+
+function updateSellerPriceQualification() {
+  renderSellerPriceQualification(currentSellerPriceQualification());
+}
+
+function renderSellerPriceQualification(qualification) {
+  el.transactionPriceQualification.textContent = qualification?.message || "-";
+  el.transactionPriceQualification.classList.remove("idle", "ok", "bad");
+  el.transactionPriceQualification.classList.add(qualification?.eligible ? "ok" : qualification?.grade ? "bad" : "idle");
+  el.launchTransactionButton.disabled = !qualification?.eligible;
+}
+
+function formatTWD(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return "-";
+  }
+  return new Intl.NumberFormat("zh-TW", {
+    style: "currency",
+    currency: "TWD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function capitalize(value) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : "";
+}
+
+function appendTextCell(row, value) {
+  const cell = document.createElement("td");
+  cell.textContent = displayValue(value);
+  row.append(cell);
 }
 
 async function postJSON(url, payload) {

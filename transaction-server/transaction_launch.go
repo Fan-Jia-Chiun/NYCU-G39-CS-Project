@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,18 +27,21 @@ type TransactionLaunchRequest struct {
 }
 
 type TransactionLaunchResponse struct {
-	Success           bool      `json:"success"`
-	Approved          bool      `json:"approved"`
-	Message           string    `json:"message"`
-	ReviewReason      string    `json:"reviewReason,omitempty"`
-	TransactionID     uint      `json:"transactionID"`
-	AssetID           string    `json:"assetID"`
-	TransactionMode   uint      `json:"transactionMode"`
-	TransactionStatus uint      `json:"transactionStatus"`
-	LegalStatus       int       `json:"legalStatus"`
-	SellerCreditScore uint      `json:"sellerCreditScore,omitempty"`
-	TransactionInfo   TradeInfo `json:"transactionInfo,omitempty"`
+	Success                  bool                      `json:"success"`
+	Approved                 bool                      `json:"approved"`
+	Message                  string                    `json:"message"`
+	ReviewReason             string                    `json:"reviewReason,omitempty"`
+	TransactionID            uint                      `json:"transactionID"`
+	AssetID                  string                    `json:"assetID"`
+	TransactionMode          uint                      `json:"transactionMode"`
+	TransactionStatus        uint                      `json:"transactionStatus"`
+	LegalStatus              int                       `json:"legalStatus"`
+	SellerCreditScore        uint                      `json:"sellerCreditScore,omitempty"`
+	SellerPriceQualification *SellerPriceQualification `json:"sellerPriceQualification,omitempty"`
+	TransactionInfo          TradeInfo                 `json:"transactionInfo,omitempty"`
 }
+
+var errSellerEligibilityChanged = errors.New("seller eligibility changed before transaction start")
 
 func transactionLaunchHandler(fabricGateway *FabricGateway) http.HandlerFunc {
 	return transactionLaunchHandlerWithDependencies(
@@ -137,20 +141,21 @@ func transactionLaunchHandlerWithDependencies(
 				legalStatus,
 				"asset legal status is not Normal",
 				0,
+				nil,
 			))
 			return
 		}
 
 		if err := submitBool(contract, "UpdateStatus", assetAddr, strconv.Itoa(legalStatusPending)); err != nil {
 			log.Printf("failed to set asset %s legal status to Pending: %v", req.AssetID, err)
-			if rejectErr := rejectTransaction(contract, req, transactionID, assetAddr, true); rejectErr != nil {
+			if rejectErr := rejectTransaction(contract, req, transactionID, assetAddr, false); rejectErr != nil {
 				log.Printf("failed to reject transaction %d after Pending status error: %v", transactionID, rejectErr)
 			}
 			writeLoginError(w, http.StatusBadGateway, "failed to update asset legal status")
 			return
 		}
 
-		_, scores, ownerDID, reviewReason, err := reviewTransactionLaunch(contract, req)
+		_, scores, ownerDID, qualification, reviewReason, err := reviewTransactionLaunch(contract, req)
 		if err != nil {
 			log.Printf("failed to review transaction %d: %v", transactionID, err)
 			if rejectErr := rejectTransaction(contract, req, transactionID, assetAddr, true); rejectErr != nil {
@@ -179,6 +184,7 @@ func transactionLaunchHandlerWithDependencies(
 				legalStatusNormal,
 				reviewReason,
 				scores.SellerCreditScore,
+				qualification,
 			))
 			return
 		}
@@ -198,6 +204,37 @@ func transactionLaunchHandlerWithDependencies(
 
 		if err := startTransaction(contract, transactionID, req.BasicPrice, req.TransactionMode, finalizingTime); err != nil {
 			log.Printf("failed to start transaction %d: %v", transactionID, err)
+			if errors.Is(err, errSellerEligibilityChanged) {
+				latestScores := scores
+				if scoreErr := evaluateJSONContract(contract, &latestScores, "GetCreditScores", req.UserDID); scoreErr != nil {
+					log.Printf("failed to refresh seller credit score after final eligibility rejection: %v", scoreErr)
+				}
+				latestQualification := evaluateSellerPriceQualification(
+					latestScores.SellerCreditScore,
+					req.BasicPrice,
+					req.TransactionMode,
+				)
+				reason := latestQualification.Message
+				if latestQualification.Eligible {
+					latestQualification.Eligible = false
+					reason = "seller eligibility changed before the transaction was started"
+					latestQualification.Message = reason
+				}
+				if rejectErr := rejectTransaction(contract, req, transactionID, assetAddr, true); rejectErr != nil {
+					log.Printf("failed to reject transaction %d after final eligibility rejection: %v", transactionID, rejectErr)
+					writeLoginError(w, http.StatusBadGateway, "failed to finalize rejected transaction")
+					return
+				}
+				writeJSON(w, http.StatusOK, rejectedTransactionLaunchResponse(
+					req,
+					transactionID,
+					legalStatusNormal,
+					reason,
+					latestScores.SellerCreditScore,
+					&latestQualification,
+				))
+				return
+			}
 			if rejectErr := rejectTransaction(contract, req, transactionID, assetAddr, true); rejectErr != nil {
 				log.Printf("failed to reject transaction %d after start error: %v", transactionID, rejectErr)
 			}
@@ -213,16 +250,17 @@ func transactionLaunchHandlerWithDependencies(
 		activeCache.Add(transactionInfo)
 
 		writeJSON(w, http.StatusOK, TransactionLaunchResponse{
-			Success:           true,
-			Approved:          true,
-			Message:           "transaction approved and started",
-			TransactionID:     transactionID,
-			AssetID:           req.AssetID,
-			TransactionMode:   req.TransactionMode,
-			TransactionStatus: transactionStatusInProgress,
-			LegalStatus:       approvedLegalStatus,
-			SellerCreditScore: scores.SellerCreditScore,
-			TransactionInfo:   transactionInfo,
+			Success:                  true,
+			Approved:                 true,
+			Message:                  "transaction approved and started",
+			TransactionID:            transactionID,
+			AssetID:                  req.AssetID,
+			TransactionMode:          req.TransactionMode,
+			TransactionStatus:        transactionStatusInProgress,
+			LegalStatus:              approvedLegalStatus,
+			SellerCreditScore:        scores.SellerCreditScore,
+			SellerPriceQualification: qualification,
+			TransactionInfo:          transactionInfo,
 		})
 	}
 }
@@ -301,50 +339,73 @@ func addNewTransaction(contract transactionContractClient, assetID string, selle
 func reviewTransactionLaunch(
 	contract transactionContractClient,
 	req TransactionLaunchRequest,
-) (string, CreditScores, string, string, error) {
+) (string, CreditScores, string, *SellerPriceQualification, string, error) {
 	userDID, err := evaluateString(contract, "GetBySellerDID", req.SellerDID)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			return "", CreditScores{}, "", "seller DID is not registered", nil
+			return "", CreditScores{}, "", nil, "seller DID is not registered", nil
 		}
-		return "", CreditScores{}, "", "", err
+		return "", CreditScores{}, "", nil, "", err
 	}
 
 	publicKey, err := evaluateString(contract, "GetPublicKey", userDID)
 	if err != nil {
 		if isPublicKeyNotFoundError(err) {
-			return userDID, CreditScores{}, "", "seller public key is not registered", nil
+			return userDID, CreditScores{}, "", nil, "seller public key is not registered", nil
 		}
-		return "", CreditScores{}, "", "", err
+		return "", CreditScores{}, "", nil, "", err
 	}
 
 	accountStatus, err := evaluateUintContract(contract, "CheckIdentityStatus", userDID)
 	if err != nil {
-		return "", CreditScores{}, "", "", err
+		return "", CreditScores{}, "", nil, "", err
 	}
 
 	var scores CreditScores
 	if err := evaluateJSONContract(contract, &scores, "GetCreditScores", userDID); err != nil {
-		return "", CreditScores{}, "", "", err
+		return "", CreditScores{}, "", nil, "", err
 	}
 
 	ownerDID, err := evaluateString(contract, "GetOwner", req.AssetID)
 	if err != nil {
-		return "", CreditScores{}, "", "", err
+		return "", CreditScores{}, "", nil, "", err
 	}
 
 	switch {
 	case userDID != req.UserDID:
-		return userDID, scores, ownerDID, "seller DID does not belong to the logged-in user", nil
+		return userDID, scores, ownerDID, nil, "seller DID does not belong to the logged-in user", nil
 	case accountStatus != accountStatusAvailable:
-		return userDID, scores, ownerDID, "seller account is not available", nil
+		return userDID, scores, ownerDID, nil, "seller account is not available", nil
 	case strings.TrimSpace(publicKey) == "":
-		return userDID, scores, ownerDID, "seller public key is not registered", nil
+		return userDID, scores, ownerDID, nil, "seller public key is not registered", nil
 	case ownerDID != req.UserDID:
-		return userDID, scores, ownerDID, "logged-in user is not the asset owner", nil
-	default:
-		return userDID, scores, ownerDID, "", nil
+		return userDID, scores, ownerDID, nil, "logged-in user is not the asset owner", nil
 	}
+
+	eligible, err := evaluateBoolContract(
+		contract,
+		"CheckSellerEligibility",
+		req.SellerDID,
+		strconv.FormatUint(uint64(req.BasicPrice), 10),
+	)
+	if err != nil {
+		return "", CreditScores{}, "", nil, "", err
+	}
+
+	qualification := evaluateSellerPriceQualification(
+		scores.SellerCreditScore,
+		req.BasicPrice,
+		req.TransactionMode,
+	)
+	if !eligible {
+		if qualification.Eligible {
+			qualification.Message = "seller does not meet the transaction launch price requirements"
+		}
+		qualification.Eligible = false
+		return userDID, scores, ownerDID, &qualification, qualification.Message, nil
+	}
+
+	return userDID, scores, ownerDID, &qualification, "", nil
 }
 
 func rejectTransaction(
@@ -363,6 +424,7 @@ func rejectTransaction(
 		contract,
 		"ChangeTransactionStatus",
 		strconv.FormatUint(uint64(transactionID), 10),
+		strconv.FormatUint(uint64(transactionStatusReviewing), 10),
 		strconv.FormatUint(uint64(transactionStatusRejected), 10),
 	); err != nil {
 		return fmt.Errorf("failed to reject transaction: %w", err)
@@ -405,14 +467,26 @@ func startTransaction(
 		return err
 	}
 
-	return submitBool(
-		contract,
+	result, err := contract.SubmitTransaction(
 		"StartTransaction",
 		strconv.FormatUint(uint64(transactionID), 10),
 		strconv.FormatUint(uint64(basicPrice), 10),
 		strconv.FormatUint(uint64(transactionMode), 10),
 		string(finalizingTimeJSON),
 	)
+	if err != nil {
+		return err
+	}
+
+	success, err := decodeBoolResult("StartTransaction", result)
+	if err != nil {
+		return err
+	}
+	if !success {
+		return errSellerEligibilityChanged
+	}
+
+	return nil
 }
 
 func submitBool(contract transactionContractClient, name string, args ...string) error {
@@ -420,19 +494,28 @@ func submitBool(contract transactionContractClient, name string, args ...string)
 	if err != nil {
 		return err
 	}
-	if len(strings.TrimSpace(string(result))) == 0 {
-		return nil
-	}
-
-	var success bool
-	if err := json.Unmarshal(result, &success); err != nil {
-		return fmt.Errorf("%s returned invalid boolean result", name)
+	success, err := decodeBoolResult(name, result)
+	if err != nil {
+		return err
 	}
 	if !success {
 		return fmt.Errorf("%s returned false", name)
 	}
 
 	return nil
+}
+
+func decodeBoolResult(name string, result []byte) (bool, error) {
+	if len(strings.TrimSpace(string(result))) == 0 {
+		return true, nil
+	}
+
+	var success bool
+	if err := json.Unmarshal(result, &success); err != nil {
+		return false, fmt.Errorf("%s returned invalid boolean result", name)
+	}
+
+	return success, nil
 }
 
 func evaluateJSONContract(contract transactionContractClient, target any, name string, args ...string) error {
@@ -479,24 +562,35 @@ func evaluateUintContract(contract transactionContractClient, name string, args 
 	return decodeUint(result)
 }
 
+func evaluateBoolContract(contract transactionContractClient, name string, args ...string) (bool, error) {
+	result, err := contract.EvaluateTransaction(name, args...)
+	if err != nil {
+		return false, err
+	}
+
+	return decodeBoolResult(name, result)
+}
+
 func rejectedTransactionLaunchResponse(
 	req TransactionLaunchRequest,
 	transactionID uint,
 	legalStatus int,
 	reason string,
 	sellerCreditScore uint,
+	qualification *SellerPriceQualification,
 ) TransactionLaunchResponse {
 	return TransactionLaunchResponse{
-		Success:           true,
-		Approved:          false,
-		Message:           "transaction application rejected",
-		ReviewReason:      reason,
-		TransactionID:     transactionID,
-		AssetID:           req.AssetID,
-		TransactionMode:   req.TransactionMode,
-		TransactionStatus: transactionStatusRejected,
-		LegalStatus:       legalStatus,
-		SellerCreditScore: sellerCreditScore,
+		Success:                  true,
+		Approved:                 false,
+		Message:                  "transaction application rejected",
+		ReviewReason:             reason,
+		TransactionID:            transactionID,
+		AssetID:                  req.AssetID,
+		TransactionMode:          req.TransactionMode,
+		TransactionStatus:        transactionStatusRejected,
+		LegalStatus:              legalStatus,
+		SellerCreditScore:        sellerCreditScore,
+		SellerPriceQualification: qualification,
 	}
 }
 

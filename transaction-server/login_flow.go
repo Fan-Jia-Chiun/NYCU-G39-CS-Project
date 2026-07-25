@@ -24,20 +24,21 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Success                   bool             `json:"success"`
-	UserDID                   string           `json:"userDID"`
-	BuyerDID                  string           `json:"buyerDID"`
-	SellerDID                 string           `json:"sellerDID"`
-	Message                   string           `json:"message"`
-	SessionToken              string           `json:"sessionToken"`
-	ExpiresAt                 string           `json:"expiresAt"`
-	SessionExpiresAt          string           `json:"sessionExpiresAt"`
-	AccountStatus             uint             `json:"accountStatus"`
-	CreditScores              CreditScores     `json:"creditScores"`
-	Assets                    []AssetLoginInfo `json:"assets"`
-	ActiveTrades              []TradeLoginInfo `json:"activeTrades"`
-	HistoricalTrades          []TradeLoginInfo `json:"historicalTrades"`
-	CurrentActiveTransactions []TradeInfo      `json:"currentActiveTransactions"`
+	Success                   bool               `json:"success"`
+	UserDID                   string             `json:"userDID"`
+	BuyerDID                  string             `json:"buyerDID"`
+	SellerDID                 string             `json:"sellerDID"`
+	Message                   string             `json:"message"`
+	SessionToken              string             `json:"sessionToken"`
+	ExpiresAt                 string             `json:"expiresAt"`
+	SessionExpiresAt          string             `json:"sessionExpiresAt"`
+	AccountStatus             uint               `json:"accountStatus"`
+	CreditScores              CreditScores       `json:"creditScores"`
+	SellerCreditPolicy        SellerCreditPolicy `json:"sellerCreditPolicy"`
+	Assets                    []AssetLoginInfo   `json:"assets"`
+	ActiveTrades              []TradeLoginInfo   `json:"activeTrades"`
+	HistoricalTrades          []TradeLoginInfo   `json:"historicalTrades"`
+	CurrentActiveTransactions []TradeInfo        `json:"currentActiveTransactions"`
 }
 
 type ErrorResponse struct {
@@ -84,7 +85,7 @@ type TradeInfo struct {
 	BasicPrice          uint     `json:"basicPrice"`
 	CurrentHighestBid   uint     `json:"currentHighestBid"`
 	FinalizingTime      TimeInfo `json:"finalizingTime"`
-	LogisticsRecordAddr string   `json:"logisticsRecordAddr,omitempty"`
+	LogisticsRecordAddr string   `json:"logisticsRecordAddr"`
 }
 
 type TradeListResult struct {
@@ -240,6 +241,7 @@ func loginHandlerWithDependencies(resolvePublicKey publicKeyResolver, initialize
 			SessionExpiresAt:          session.ExpiresAt.UTC().Format(time.RFC3339),
 			AccountStatus:             data.AccountStatus,
 			CreditScores:              data.CreditScores,
+			SellerCreditPolicy:        sellerCreditPolicy(data.CreditScores.SellerCreditScore),
 			Assets:                    data.Assets,
 			ActiveTrades:              data.ActiveTrades,
 			HistoricalTrades:          data.HistoricalTrades,

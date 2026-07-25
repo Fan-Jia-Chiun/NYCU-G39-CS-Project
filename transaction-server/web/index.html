@@ -266,6 +266,46 @@
           <span id="transactionState" class="status-tag idle">Waiting</span>
         </div>
 
+        <section class="credit-policy-section" aria-labelledby="sellerCreditPolicyTitle">
+          <div class="section-title">
+            <h3 id="sellerCreditPolicyTitle">Seller Credit and Transaction Price Limits</h3>
+          </div>
+          <div class="credit-summary">
+            <output>
+              <span>Seller Credit Score</span>
+              <strong id="launchSellerCreditScore">Log in to load</strong>
+            </output>
+            <output>
+              <span>Credit Grade</span>
+              <strong id="sellerCreditGrade">-</strong>
+            </output>
+            <output>
+              <span>Maximum Transaction Price</span>
+              <strong id="sellerMaximumPrice">-</strong>
+            </output>
+          </div>
+          <p id="sellerCreditPolicyMessage" class="policy-message">
+            Log in to load the current seller credit policy.
+          </p>
+          <div class="record-list">
+            <table class="credit-policy-table">
+              <thead>
+                <tr>
+                  <th>Grade</th>
+                  <th>Credit Score</th>
+                  <th>Maximum Transaction Price</th>
+                  <th>Eligibility</th>
+                </tr>
+              </thead>
+              <tbody id="sellerCreditRulesBody">
+                <tr>
+                  <td colspan="4">Log in to load the seller credit standards.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <div class="form-grid">
           <label>
             Asset ID
@@ -280,7 +320,7 @@
             </select>
           </label>
           <label>
-            Price
+            <span id="transactionPriceLabel">Sale Price</span>
             <input id="basicPrice" type="number" min="1" step="1" value="1000" />
           </label>
           <label id="finalizingTimeField" hidden>
@@ -288,6 +328,9 @@
             <input id="finalizingTime" type="datetime-local" step="1" />
           </label>
         </div>
+        <p id="transactionPriceQualification" class="price-qualification idle">
+          Log in to check the transaction price.
+        </p>
 
         <div class="actions">
           <button id="launchTransactionButton" type="button">Submit for Review</button>
@@ -320,6 +363,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260724-transaction-launch"></script>
+    <script src="./app.js?v=20260725-seller-credit-policy"></script>
   </body>
 </html>
