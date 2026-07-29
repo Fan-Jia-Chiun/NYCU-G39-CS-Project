@@ -2,6 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -23,6 +29,7 @@ type fakeTransactionContract struct {
 	userDID                string
 	sellerDID              string
 	sellerCreditScore      uint
+	publicKeyText          string
 	startTransactionResult *bool
 	calls                  []contractCall
 }
@@ -36,7 +43,7 @@ func (f *fakeTransactionContract) EvaluateTransaction(name string, args ...strin
 	case "GetBySellerDID":
 		return []byte(f.userDID), nil
 	case "GetPublicKey":
-		return []byte("test-public-key"), nil
+		return []byte(f.publicKeyText), nil
 	case "CheckIdentityStatus":
 		return json.Marshal(accountStatusAvailable)
 	case "GetCreditScores":
@@ -92,6 +99,21 @@ func (f *fakeTransactionContract) SubmitTransaction(name string, args ...string)
 	}
 }
 
+func TestBuildTransactionLaunchCredential(t *testing.T) {
+	got := buildTransactionLaunchCredential(
+		"did:nycu-g39:seller:abc",
+		"asset-123",
+		1,
+		300000,
+		"2026-07-30T08:30:00Z",
+		"2026-07-29T08:30:00Z",
+	)
+	want := "TRANSACTION_LAUNCH|did:nycu-g39:seller:abc|asset-123|1|300000|2026-07-30T08:30:00Z|2026-07-29T08:30:00Z"
+	if got != want {
+		t.Fatalf("credential = %q, want %q", got, want)
+	}
+}
+
 func TestTransactionLaunchApproved(t *testing.T) {
 	now := time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC)
 	sessions := newSessionStore(time.Hour)
@@ -110,14 +132,15 @@ func TestTransactionLaunchApproved(t *testing.T) {
 	cache := newActiveTransactionCache()
 	handler := transactionLaunchHandlerWithDependencies(contract, sessions, cache, func() time.Time { return now })
 
-	statusCode, response := performTransactionLaunchRequest(t, handler, TransactionLaunchRequest{
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
 		SessionToken:    session.Token,
 		UserDID:         "did:user:1",
 		SellerDID:       "did:seller:1",
 		AssetID:         "asset-1",
 		TransactionMode: transactionModeFixedPrice,
 		BasicPrice:      500,
-	})
+	}, now)
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
 
 	if statusCode != http.StatusOK {
 		t.Fatalf("status = %d, response = %+v", statusCode, response)
@@ -170,14 +193,15 @@ func TestTransactionLaunchRejectedRestoresPendingAsset(t *testing.T) {
 	cache := newActiveTransactionCache()
 	handler := transactionLaunchHandlerWithDependencies(contract, sessions, cache, func() time.Time { return now })
 
-	statusCode, response := performTransactionLaunchRequest(t, handler, TransactionLaunchRequest{
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
 		SessionToken:    session.Token,
 		UserDID:         "did:user:1",
 		SellerDID:       "did:seller:1",
 		AssetID:         "asset-1",
 		TransactionMode: transactionModeFixedPrice,
 		BasicPrice:      500,
-	})
+	}, now)
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
 
 	if statusCode != http.StatusOK {
 		t.Fatalf("status = %d, response = %+v", statusCode, response)
@@ -233,14 +257,15 @@ func TestTransactionLaunchRejectsSellerBelowCreditThreshold(t *testing.T) {
 	cache := newActiveTransactionCache()
 	handler := transactionLaunchHandlerWithDependencies(contract, sessions, cache, func() time.Time { return now })
 
-	statusCode, response := performTransactionLaunchRequest(t, handler, TransactionLaunchRequest{
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
 		SessionToken:    session.Token,
 		UserDID:         "did:user:1",
 		SellerDID:       "did:seller:1",
 		AssetID:         "asset-1",
 		TransactionMode: transactionModeFixedPrice,
 		BasicPrice:      1,
-	})
+	}, now)
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
 
 	if statusCode != http.StatusOK || response.Approved {
 		t.Fatalf("status = %d, response = %+v", statusCode, response)
@@ -283,14 +308,15 @@ func TestTransactionLaunchHandlesFinalEligibilityRecheck(t *testing.T) {
 	cache := newActiveTransactionCache()
 	handler := transactionLaunchHandlerWithDependencies(contract, sessions, cache, func() time.Time { return now })
 
-	statusCode, response := performTransactionLaunchRequest(t, handler, TransactionLaunchRequest{
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
 		SessionToken:    session.Token,
 		UserDID:         "did:user:1",
 		SellerDID:       "did:seller:1",
 		AssetID:         "asset-1",
 		TransactionMode: transactionModeFixedPrice,
 		BasicPrice:      500,
-	})
+	}, now)
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
 
 	if statusCode != http.StatusOK || response.Approved {
 		t.Fatalf("status = %d, response = %+v", statusCode, response)
@@ -322,14 +348,16 @@ func TestTransactionLaunchRejectsInvalidSessionBeforeFabric(t *testing.T) {
 		func() time.Time { return time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC) },
 	)
 
-	statusCode, _ := performTransactionLaunchRequest(t, handler, TransactionLaunchRequest{
+	now := time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC)
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
 		SessionToken:    "invalid",
 		UserDID:         "did:user:1",
 		SellerDID:       "did:seller:1",
 		AssetID:         "asset-1",
 		TransactionMode: transactionModeFixedPrice,
 		BasicPrice:      500,
-	})
+	}, now)
+	statusCode, _ := performTransactionLaunchRequest(t, handler, request)
 
 	if statusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", statusCode, http.StatusUnauthorized)
@@ -337,6 +365,162 @@ func TestTransactionLaunchRejectsInvalidSessionBeforeFabric(t *testing.T) {
 	if len(contract.calls) != 0 {
 		t.Fatalf("invalid session must not submit Fabric transactions")
 	}
+}
+
+func TestTransactionLaunchRejectsModifiedSignedPriceBeforeFabric(t *testing.T) {
+	now := time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC)
+	sessions := newSessionStore(time.Hour)
+	session, err := sessions.Create("did:user:1", now)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	contract := &fakeTransactionContract{
+		userDID:   "did:user:1",
+		sellerDID: "did:seller:1",
+	}
+	handler := transactionLaunchHandlerWithDependencies(
+		contract,
+		sessions,
+		newActiveTransactionCache(),
+		func() time.Time { return now },
+	)
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
+		SessionToken:    session.Token,
+		UserDID:         "did:user:1",
+		SellerDID:       "did:seller:1",
+		AssetID:         "asset-1",
+		TransactionMode: transactionModeFixedPrice,
+		BasicPrice:      500,
+	}, now)
+	request.BasicPrice++
+
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
+	if statusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, response = %+v", statusCode, response)
+	}
+	if response.Message != "signature verification failed" {
+		t.Fatalf("message = %q", response.Message)
+	}
+	if len(contract.calls) != 0 {
+		t.Fatalf("invalid signature must not submit Fabric transactions")
+	}
+}
+
+func TestTransactionLaunchRejectsExpiredTimestampBeforeFabric(t *testing.T) {
+	now := time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC)
+	sessions := newSessionStore(time.Hour)
+	session, err := sessions.Create("did:user:1", now)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	contract := &fakeTransactionContract{
+		userDID:   "did:user:1",
+		sellerDID: "did:seller:1",
+	}
+	handler := transactionLaunchHandlerWithDependencies(
+		contract,
+		sessions,
+		newActiveTransactionCache(),
+		func() time.Time { return now },
+	)
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
+		SessionToken:    session.Token,
+		UserDID:         "did:user:1",
+		SellerDID:       "did:seller:1",
+		AssetID:         "asset-1",
+		TransactionMode: transactionModeFixedPrice,
+		BasicPrice:      500,
+	}, now.Add(-61*time.Second))
+
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
+	if statusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, response = %+v", statusCode, response)
+	}
+	if response.Message != "timestamp is outside the allowed window" {
+		t.Fatalf("message = %q", response.Message)
+	}
+	if len(contract.calls) != 0 {
+		t.Fatalf("expired request must not submit Fabric transactions")
+	}
+}
+
+func TestTransactionLaunchRejectsInvalidSignatureEncodingBeforeFabric(t *testing.T) {
+	now := time.Date(2026, 7, 24, 8, 30, 0, 0, time.UTC)
+	sessions := newSessionStore(time.Hour)
+	session, err := sessions.Create("did:user:1", now)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	contract := &fakeTransactionContract{
+		userDID:   "did:user:1",
+		sellerDID: "did:seller:1",
+	}
+	handler := transactionLaunchHandlerWithDependencies(
+		contract,
+		sessions,
+		newActiveTransactionCache(),
+		func() time.Time { return now },
+	)
+	request := signedTransactionLaunchRequest(t, contract, TransactionLaunchRequest{
+		SessionToken:    session.Token,
+		UserDID:         "did:user:1",
+		SellerDID:       "did:seller:1",
+		AssetID:         "asset-1",
+		TransactionMode: transactionModeFixedPrice,
+		BasicPrice:      500,
+	}, now)
+	request.Signature = "not-base64!"
+
+	statusCode, response := performTransactionLaunchRequest(t, handler, request)
+	if statusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, response = %+v", statusCode, response)
+	}
+	if response.Message != "signature is invalid base64" {
+		t.Fatalf("message = %q", response.Message)
+	}
+	if len(contract.calls) != 0 {
+		t.Fatalf("malformed signature must not submit Fabric transactions")
+	}
+}
+
+func signedTransactionLaunchRequest(
+	t *testing.T,
+	contract *fakeTransactionContract,
+	request TransactionLaunchRequest,
+	now time.Time,
+) TransactionLaunchRequest {
+	t.Helper()
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	publicKeyDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MarshalPKIXPublicKey() error = %v", err)
+	}
+	contract.publicKeyText = base64.StdEncoding.EncodeToString(publicKeyDER)
+
+	request.Timestamp = now.UTC().Format(time.RFC3339)
+	credential := buildTransactionLaunchCredential(
+		request.SellerDID,
+		request.AssetID,
+		request.TransactionMode,
+		request.BasicPrice,
+		request.FinalizingTime,
+		request.Timestamp,
+	)
+	digest := sha256.Sum256([]byte(credential))
+	signature, err := ecdsa.SignASN1(rand.Reader, privateKey, digest[:])
+	if err != nil {
+		t.Fatalf("SignASN1() error = %v", err)
+	}
+	request.Signature = base64.StdEncoding.EncodeToString(signature)
+
+	return request
 }
 
 func performTransactionLaunchRequest(

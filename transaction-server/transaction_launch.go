@@ -24,6 +24,8 @@ type TransactionLaunchRequest struct {
 	TransactionMode uint   `json:"transactionMode"`
 	BasicPrice      uint   `json:"basicPrice"`
 	FinalizingTime  string `json:"finalizingTime,omitempty"`
+	Timestamp       string `json:"timestamp"`
+	Signature       string `json:"signature"`
 }
 
 type TransactionLaunchResponse struct {
@@ -75,17 +77,44 @@ func transactionLaunchHandlerWithDependencies(
 		req.SellerDID = strings.TrimSpace(req.SellerDID)
 		req.AssetID = strings.TrimSpace(req.AssetID)
 		req.FinalizingTime = strings.TrimSpace(req.FinalizingTime)
+		req.Timestamp = strings.TrimSpace(req.Timestamp)
+		req.Signature = strings.TrimSpace(req.Signature)
 
 		if req.SessionToken == "" || req.UserDID == "" {
 			writeLoginError(w, http.StatusBadRequest, "sessionToken and userDID are required")
 			return
 		}
-		if _, err := sessions.Validate(req.SessionToken, req.UserDID, now()); err != nil {
+		requestTime := now()
+		if _, err := sessions.Validate(req.SessionToken, req.UserDID, requestTime); err != nil {
 			writeSessionValidationError(w, err)
 			return
 		}
-		if err := validateTransactionLaunchRequest(req, now()); err != nil {
+		if err := validateTransactionLaunchRequest(req, requestTime); err != nil {
 			writeLoginError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateLoginTimestamp(req.Timestamp, requestTime, defaultLoginTimestampSkew); err != nil {
+			switch err {
+			case errInvalidTimestamp:
+				writeLoginError(w, http.StatusBadRequest, "timestamp is invalid")
+			case errExpiredTimestamp, errFutureTimestamp:
+				writeLoginError(w, http.StatusUnauthorized, "timestamp is outside the allowed window")
+			default:
+				writeLoginError(w, http.StatusBadRequest, "timestamp is invalid")
+			}
+			return
+		}
+		if err := verifyTransactionLaunchCredential(contract, req); err != nil {
+			var credentialErr *transactionLaunchCredentialError
+			if errors.As(err, &credentialErr) {
+				if credentialErr.LogError != nil {
+					log.Printf("%s: %v", credentialErr.LogMessage, credentialErr.LogError)
+				}
+				writeLoginError(w, credentialErr.StatusCode, credentialErr.ClientMessage)
+				return
+			}
+			log.Printf("failed to verify transaction launch credential: %v", err)
+			writeLoginError(w, http.StatusInternalServerError, "failed to verify transaction launch credential")
 			return
 		}
 
@@ -278,6 +307,22 @@ func validateTransactionLaunchRequest(req TransactionLaunchRequest, now time.Tim
 	if req.TransactionMode > transactionModeSealedBid {
 		return fmt.Errorf("transactionMode must be 0, 1, or 2")
 	}
+	if req.Timestamp == "" {
+		return fmt.Errorf("timestamp is required")
+	}
+	if req.Signature == "" {
+		return fmt.Errorf("signature is required")
+	}
+	for name, value := range map[string]string{
+		"sellerDID":      req.SellerDID,
+		"assetID":        req.AssetID,
+		"finalizingTime": req.FinalizingTime,
+		"timestamp":      req.Timestamp,
+	} {
+		if err := validateCredentialField(name, value); err != nil {
+			return err
+		}
+	}
 	if req.TransactionMode == transactionModeFixedPrice {
 		return nil
 	}
@@ -294,6 +339,124 @@ func validateTransactionLaunchRequest(req TransactionLaunchRequest, now time.Tim
 	}
 
 	return nil
+}
+
+type transactionLaunchCredentialError struct {
+	StatusCode    int
+	ClientMessage string
+	LogMessage    string
+	LogError      error
+}
+
+func (e *transactionLaunchCredentialError) Error() string {
+	if e.LogError != nil {
+		return e.LogMessage + ": " + e.LogError.Error()
+	}
+
+	return e.ClientMessage
+}
+
+func verifyTransactionLaunchCredential(
+	contract transactionContractClient,
+	req TransactionLaunchRequest,
+) error {
+	userDID, err := evaluateString(contract, "GetBySellerDID", req.SellerDID)
+	if err != nil {
+		if isPublicKeyNotFoundError(err) {
+			return &transactionLaunchCredentialError{
+				StatusCode:    http.StatusNotFound,
+				ClientMessage: "seller identity not found",
+				LogMessage:    "seller DID lookup failed",
+				LogError:      err,
+			}
+		}
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusBadGateway,
+			ClientMessage: "failed to query seller identity",
+			LogMessage:    "failed to query seller DID mapping",
+			LogError:      err,
+		}
+	}
+	if userDID == "" {
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusNotFound,
+			ClientMessage: "seller identity not found",
+		}
+	}
+	if userDID != req.UserDID {
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusUnauthorized,
+			ClientMessage: "seller DID does not belong to the logged-in user",
+		}
+	}
+
+	publicKeyText, err := evaluateString(contract, "GetPublicKey", userDID)
+	if err != nil {
+		if isPublicKeyNotFoundError(err) {
+			return &transactionLaunchCredentialError{
+				StatusCode:    http.StatusNotFound,
+				ClientMessage: "seller public key not found",
+				LogMessage:    "seller public key lookup failed",
+				LogError:      err,
+			}
+		}
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusBadGateway,
+			ClientMessage: "failed to query seller public key",
+			LogMessage:    "failed to query seller public key",
+			LogError:      err,
+		}
+	}
+
+	publicKey, err := parseECDSAPublicKey(publicKeyText)
+	if err != nil {
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusInternalServerError,
+			ClientMessage: "stored seller public key is invalid",
+			LogMessage:    "stored seller public key is invalid",
+			LogError:      err,
+		}
+	}
+
+	credential := buildTransactionLaunchCredential(
+		req.SellerDID,
+		req.AssetID,
+		req.TransactionMode,
+		req.BasicPrice,
+		req.FinalizingTime,
+		req.Timestamp,
+	)
+	if err := verifyCredentialSignature(publicKey, credential, req.Signature); err != nil {
+		if isSignatureFormatError(err) {
+			return &transactionLaunchCredentialError{
+				StatusCode:    http.StatusBadRequest,
+				ClientMessage: "signature is invalid base64",
+			}
+		}
+		return &transactionLaunchCredentialError{
+			StatusCode:    http.StatusUnauthorized,
+			ClientMessage: "signature verification failed",
+		}
+	}
+
+	return nil
+}
+
+func buildTransactionLaunchCredential(
+	sellerDID string,
+	assetID string,
+	transactionMode uint,
+	basicPrice uint,
+	finalizingTime string,
+	timestamp string,
+) string {
+	return "TRANSACTION_LAUNCH|" +
+		sellerDID + "|" +
+		assetID + "|" +
+		strconv.FormatUint(uint64(transactionMode), 10) + "|" +
+		strconv.FormatUint(uint64(basicPrice), 10) + "|" +
+		finalizingTime + "|" +
+		timestamp
 }
 
 func transactionFinalizingTime(req TransactionLaunchRequest) (TimeInfo, error) {

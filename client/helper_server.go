@@ -465,6 +465,17 @@ func (s helperServer) apiTransactionLaunchHandler(w http.ResponseWriter, r *http
 		return
 	}
 
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusBadRequest, "local private key is not ready; register first")
+		return
+	}
+	req, err = newTransactionLaunchRequest(req, privateKey, nowUTC())
+	if err != nil {
+		helperError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	body, statusCode, err := postJSONToServer(s.transactionURL, req)
 	if err != nil {
 		helperError(w, http.StatusBadGateway, "failed to call transaction server")

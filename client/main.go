@@ -81,7 +81,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "launch-transaction":
-		if err := runLaunchTransaction(*transactionURL, TransactionLaunchRequest{
+		if err := runLaunchTransaction(*transactionURL, *keyDir, TransactionLaunchRequest{
 			SessionToken:    *sessionToken,
 			UserDID:         resolvedUserDID,
 			SellerDID:       *sellerDID,
