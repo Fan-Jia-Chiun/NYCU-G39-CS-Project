@@ -18,6 +18,8 @@ type RegisterRequest struct {
 	Email        string `json:"email"`
 	Phone        string `json:"phone"`
 	PublicKey    string `json:"publicKey"`
+	Timestamp    string `json:"timestamp"`
+	Signature    string `json:"signature"`
 }
 
 type LoginRequest struct {
@@ -111,6 +113,15 @@ func runRegister(registerURL string, keyDir string, req RegisterRequest) error {
 	}
 
 	req.PublicKey = resolvedPublicKey
+
+	privateKey, err := readPrivateKey(privateKeyPath(keyDir))
+	if err != nil {
+		return fmt.Errorf("failed to read local private key: %w", err)
+	}
+	req, err = newSignedRegisterRequest(req, privateKey, nowUTC())
+	if err != nil {
+		return err
+	}
 
 	return callRegister(registerURL, req)
 }

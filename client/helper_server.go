@@ -259,13 +259,24 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	body, statusCode, err := postJSONToServer(s.registerURL, RegisterRequest{
+	privateKey, err := readPrivateKey(privateKeyPath(s.keyDir))
+	if err != nil {
+		helperError(w, http.StatusInternalServerError, "failed to read local identity private key")
+		return
+	}
+	registerRequest, err := newSignedRegisterRequest(RegisterRequest{
 		UserName:     req.UserName,
 		IDCardNumber: req.IDCardNumber,
 		Email:        req.Email,
 		Phone:        req.Phone,
 		PublicKey:    publicKey,
-	})
+	}, privateKey, nowUTC())
+	if err != nil {
+		helperError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	body, statusCode, err := postJSONToServer(s.registerURL, registerRequest)
 	if err != nil {
 		helperError(w, http.StatusBadGateway, "failed to call authority server")
 		return

@@ -19,6 +19,8 @@ type RegisterRequest struct {
 	Email        string `json:"email"`
 	Phone        string `json:"phone"`
 	PublicKey    string `json:"publicKey"`
+	Timestamp    string `json:"timestamp"`
+	Signature    string `json:"signature"`
 }
 
 type RegisterResponse struct {
@@ -87,8 +89,15 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if verificationErr := verifyIdentityRegisterRequest(req, time.Now().UTC()); verificationErr != nil {
+			if verificationErr.Cause != nil {
+				log.Printf("registration credential verification failed: %v", verificationErr.Cause)
+			}
+			http.Error(w, verificationErr.ClientMessage, verificationErr.StatusCode)
+			return
+		}
 
-		log.Printf("received register request: %+v", req)
+		log.Printf("received verified register request for userName=%q email=%q", req.UserName, req.Email)
 
 		// Ask IDMgr to generate a novel user DID and PIMgr for the user.
 		result, err := fabricGateway.Contract.SubmitTransaction("RegisterIdentity")
@@ -201,6 +210,8 @@ func normalizeRegisterRequest(req *RegisterRequest) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Phone = strings.TrimSpace(req.Phone)
 	req.PublicKey = strings.TrimSpace(req.PublicKey)
+	req.Timestamp = strings.TrimSpace(req.Timestamp)
+	req.Signature = strings.TrimSpace(req.Signature)
 }
 
 func validateRegisterRequest(req RegisterRequest) error {
@@ -218,6 +229,25 @@ func validateRegisterRequest(req RegisterRequest) error {
 	}
 	if req.PublicKey == "" {
 		return fmt.Errorf("publicKey is required")
+	}
+	if req.Timestamp == "" {
+		return fmt.Errorf("timestamp is required")
+	}
+	if req.Signature == "" {
+		return fmt.Errorf("signature is required")
+	}
+
+	for name, value := range map[string]string{
+		"userName":     req.UserName,
+		"idCardNumber": req.IDCardNumber,
+		"email":        req.Email,
+		"phone":        req.Phone,
+		"publicKey":    req.PublicKey,
+		"timestamp":    req.Timestamp,
+	} {
+		if err := validateIdentityRegisterCredentialField(name, value); err != nil {
+			return err
+		}
 	}
 
 	return nil
