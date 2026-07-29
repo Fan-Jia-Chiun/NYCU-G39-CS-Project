@@ -116,6 +116,9 @@ func newAssetRegistrationPayloadFromBytes(input AssetRegistrationInput, fileName
 	}, nil
 }
 
+// Canonical Message: Property Register
+// format: REGISTER_ASSET|<userDID>|<assetName>|<assetLocation>|
+//         <description>|<photoHash>|<timestamp>
 func buildRegisterAssetCredential(userDID string, assetName string, assetLocation string, description string, photoHash string, timestamp string) string {
 	return "REGISTER_ASSET|" + userDID + "|" + assetName + "|" + assetLocation + "|" + description + "|" + photoHash + "|" + timestamp
 }

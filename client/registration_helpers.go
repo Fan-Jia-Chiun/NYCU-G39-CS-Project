@@ -68,6 +68,8 @@ func newSignedRegisterRequest(
 	return req, nil
 }
 
+// Canonical Message: Registration & Initialization
+// format: IDENTITY_REGISTER|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
 func buildIdentityRegisterCredential(
 	userName string,
 	idCardNumber string,

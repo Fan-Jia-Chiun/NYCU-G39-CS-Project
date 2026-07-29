@@ -24,6 +24,8 @@ var (
 	}
 )
 
+// Canonical Message: Transaction Chain Login & Authorization
+// format: LOGIN|<userDID>|<timestamp>
 func buildLoginCredential(userDID string, timestamp string) string {
 	return "LOGIN|" + userDID + "|" + timestamp
 }

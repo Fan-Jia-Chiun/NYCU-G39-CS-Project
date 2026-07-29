@@ -121,6 +121,9 @@ func newTransactionLaunchRequest(
 	return req, nil
 }
 
+// Canonical Message: Property Transaction Launch
+// format: TRANSACTION_LAUNCH|sellerDID|assetID|
+//         transactionMode|basicPrice|finalizingTime|timestamp
 func buildTransactionLaunchCredential(
 	sellerDID string,
 	assetID string,
