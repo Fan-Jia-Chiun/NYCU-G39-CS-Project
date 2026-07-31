@@ -14,14 +14,15 @@ import (
 )
 
 type RegisterRequest struct {
-	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
-	UserName     string `json:"userName"`
-	IDCardNumber string `json:"idCardNumber"`
-	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	PublicKey    string `json:"publicKey"`
-	Timestamp    string `json:"timestamp"`
-	Signature    string `json:"signature"`
+	UserType             uint   `json:"userType"` // 0: general user, 1: logistics personnel
+	UserName             string `json:"userName"`
+	LogisticsCompanyName string `json:"logisticsCompanyName,omitempty"`
+	IDCardNumber         string `json:"idCardNumber"`
+	Email                string `json:"email"`
+	Phone                string `json:"phone"`
+	PublicKey            string `json:"publicKey"`
+	Timestamp            string `json:"timestamp"`
+	Signature            string `json:"signature"`
 }
 
 type RegisterResponse struct {
@@ -207,6 +208,7 @@ func registerTradingIdentity(transactionServerURL string, userDID string, public
 
 func normalizeRegisterRequest(req *RegisterRequest) {
 	req.UserName = strings.TrimSpace(req.UserName)
+	req.LogisticsCompanyName = strings.TrimSpace(req.LogisticsCompanyName)
 	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
 	req.Email = strings.TrimSpace(req.Email)
 	req.Phone = strings.TrimSpace(req.Phone)
@@ -218,6 +220,9 @@ func normalizeRegisterRequest(req *RegisterRequest) {
 func validateRegisterRequest(req RegisterRequest) error {
 	if req.UserType > userTypeLogistics {
 		return fmt.Errorf("userType must be 0 or 1")
+	}
+	if req.UserType == userTypeLogistics && req.LogisticsCompanyName == "" {
+		return fmt.Errorf("logisticsCompanyName is required for logistics personnel")
 	}
 	if req.UserName == "" {
 		return fmt.Errorf("userName is required")
@@ -242,12 +247,13 @@ func validateRegisterRequest(req RegisterRequest) error {
 	}
 
 	for name, value := range map[string]string{
-		"userName":     req.UserName,
-		"idCardNumber": req.IDCardNumber,
-		"email":        req.Email,
-		"phone":        req.Phone,
-		"publicKey":    req.PublicKey,
-		"timestamp":    req.Timestamp,
+		"userName":             req.UserName,
+		"logisticsCompanyName": req.LogisticsCompanyName,
+		"idCardNumber":         req.IDCardNumber,
+		"email":                req.Email,
+		"phone":                req.Phone,
+		"publicKey":            req.PublicKey,
+		"timestamp":            req.Timestamp,
 	} {
 		if err := validateIdentityRegisterCredentialField(name, value); err != nil {
 			return err

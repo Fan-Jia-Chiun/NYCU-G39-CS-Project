@@ -26,6 +26,7 @@ func newSignedRegisterRequest(
 	}
 
 	req.UserName = strings.TrimSpace(req.UserName)
+	req.LogisticsCompanyName = strings.TrimSpace(req.LogisticsCompanyName)
 	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
 	req.Email = strings.TrimSpace(req.Email)
 	req.Phone = strings.TrimSpace(req.Phone)
@@ -46,6 +47,12 @@ func newSignedRegisterRequest(
 			return RegisterRequest{}, err
 		}
 	}
+	if req.UserType == userTypeLogistics && req.LogisticsCompanyName == "" {
+		return RegisterRequest{}, fmt.Errorf("logisticsCompanyName is required for logistics personnel")
+	}
+	if err := validateIdentityRegisterCredentialField("logisticsCompanyName", req.LogisticsCompanyName); err != nil {
+		return RegisterRequest{}, err
+	}
 	if privateKey == nil {
 		return RegisterRequest{}, fmt.Errorf("private key is required")
 	}
@@ -62,6 +69,7 @@ func newSignedRegisterRequest(
 	credential := buildIdentityRegisterCredential(
 		req.UserType,
 		req.UserName,
+		req.LogisticsCompanyName,
 		req.IDCardNumber,
 		req.Email,
 		req.Phone,
@@ -80,10 +88,11 @@ func newSignedRegisterRequest(
 }
 
 // Canonical Message: Registration & Initialization
-// format: IDENTITY_REGISTER|<userType>|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
+// format: IDENTITY_REGISTER|<userType>|<userName>|<logisticsCompanyName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
 func buildIdentityRegisterCredential(
 	userType uint,
 	userName string,
+	logisticsCompanyName string,
 	idCardNumber string,
 	email string,
 	phone string,
@@ -93,6 +102,7 @@ func buildIdentityRegisterCredential(
 	return "IDENTITY_REGISTER|" +
 		strconv.FormatUint(uint64(userType), 10) + "|" +
 		userName + "|" +
+		logisticsCompanyName + "|" +
 		idCardNumber + "|" +
 		email + "|" +
 		phone + "|" +

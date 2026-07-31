@@ -53,13 +53,14 @@ type signAssetResponse struct {
 }
 
 type apiRegisterRequest struct {
-	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
-	UserName     string `json:"userName"`
-	IDCardNumber string `json:"idCardNumber"`
-	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
+	UserType             uint   `json:"userType"` // 0: general user, 1: logistics personnel
+	UserName             string `json:"userName"`
+	LogisticsCompanyName string `json:"logisticsCompanyName,omitempty"`
+	IDCardNumber         string `json:"idCardNumber"`
+	Email                string `json:"email"`
+	Phone                string `json:"phone"`
+	Username             string `json:"username,omitempty"`
+	Password             string `json:"password,omitempty"`
 }
 
 type apiRegisterResponse struct {
@@ -245,6 +246,7 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	req.UserName = strings.TrimSpace(req.UserName)
+	req.LogisticsCompanyName = strings.TrimSpace(req.LogisticsCompanyName)
 	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
 	req.Email = strings.TrimSpace(req.Email)
 	req.Phone = strings.TrimSpace(req.Phone)
@@ -266,12 +268,13 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	registerRequest, err := newSignedRegisterRequest(RegisterRequest{
-		UserType:     req.UserType,
-		UserName:     req.UserName,
-		IDCardNumber: req.IDCardNumber,
-		Email:        req.Email,
-		Phone:        req.Phone,
-		PublicKey:    publicKey,
+		UserType:             req.UserType,
+		UserName:             req.UserName,
+		LogisticsCompanyName: req.LogisticsCompanyName,
+		IDCardNumber:         req.IDCardNumber,
+		Email:                req.Email,
+		Phone:                req.Phone,
+		PublicKey:            publicKey,
 	}, privateKey, nowUTC())
 	if err != nil {
 		helperError(w, http.StatusBadRequest, err.Error())

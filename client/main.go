@@ -13,14 +13,15 @@ import (
 )
 
 type RegisterRequest struct {
-	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
-	UserName     string `json:"userName"`
-	IDCardNumber string `json:"idCardNumber"`
-	Email        string `json:"email"`
-	Phone        string `json:"phone"`
-	PublicKey    string `json:"publicKey"`
-	Timestamp    string `json:"timestamp"`
-	Signature    string `json:"signature"`
+	UserType             uint   `json:"userType"` // 0: general user, 1: logistics personnel
+	UserName             string `json:"userName"`
+	LogisticsCompanyName string `json:"logisticsCompanyName,omitempty"`
+	IDCardNumber         string `json:"idCardNumber"`
+	Email                string `json:"email"`
+	Phone                string `json:"phone"`
+	PublicKey            string `json:"publicKey"`
+	Timestamp            string `json:"timestamp"`
+	Signature            string `json:"signature"`
 }
 
 type LoginRequest struct {
@@ -38,6 +39,7 @@ func main() {
 	helperAddr := flag.String("helperAddr", "127.0.0.1:8090", "local signing helper listen address")
 	userType := flag.Uint("userType", userTypeGeneral, "user type: 0 general user, 1 logistics personnel")
 	userName := flag.String("userName", "", "user name")
+	logisticsCompanyName := flag.String("logisticsCompanyName", "", "logistics company name; required when userType is 1")
 	idCardNumber := flag.String("idCardNumber", "", "ID card number")
 	email := flag.String("email", "", "email")
 	phone := flag.String("phone", "", "phone")
@@ -59,11 +61,12 @@ func main() {
 	switch *mode {
 	case "register":
 		if err := runRegister(*registerURL, *keyDir, RegisterRequest{
-			UserType:     *userType,
-			UserName:     *userName,
-			IDCardNumber: *idCardNumber,
-			Email:        *email,
-			Phone:        *phone,
+			UserType:             *userType,
+			UserName:             *userName,
+			LogisticsCompanyName: *logisticsCompanyName,
+			IDCardNumber:         *idCardNumber,
+			Email:                *email,
+			Phone:                *phone,
 		}); err != nil {
 			log.Printf("register request failed: %v", err)
 			os.Exit(1)

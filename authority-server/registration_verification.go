@@ -64,6 +64,7 @@ func verifyIdentityRegisterRequest(
 	credential := buildIdentityRegisterCredential(
 		req.UserType,
 		req.UserName,
+		req.LogisticsCompanyName,
 		req.IDCardNumber,
 		req.Email,
 		req.Phone,
@@ -82,10 +83,11 @@ func verifyIdentityRegisterRequest(
 }
 
 // Canonical Message: Registration & Initialization
-// format: IDENTITY_REGISTER|<userType>|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
+// format: IDENTITY_REGISTER|<userType>|<userName>|<logisticsCompanyName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
 func buildIdentityRegisterCredential(
 	userType uint,
 	userName string,
+	logisticsCompanyName string,
 	idCardNumber string,
 	email string,
 	phone string,
@@ -95,6 +97,7 @@ func buildIdentityRegisterCredential(
 	return "IDENTITY_REGISTER|" +
 		strconv.FormatUint(uint64(userType), 10) + "|" +
 		userName + "|" +
+		logisticsCompanyName + "|" +
 		idCardNumber + "|" +
 		email + "|" +
 		phone + "|" +

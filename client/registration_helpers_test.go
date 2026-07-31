@@ -15,13 +15,14 @@ func TestBuildIdentityRegisterCredential(t *testing.T) {
 	got := buildIdentityRegisterCredential(
 		userTypeGeneral,
 		"Alice",
+		"",
 		"A123456789",
 		"alice@example.com",
 		"0912345678",
 		"public-key-text",
 		"2026-07-29T08:30:00Z",
 	)
-	want := "IDENTITY_REGISTER|0|Alice|A123456789|alice@example.com|0912345678|public-key-text|2026-07-29T08:30:00Z"
+	want := "IDENTITY_REGISTER|0|Alice||A123456789|alice@example.com|0912345678|public-key-text|2026-07-29T08:30:00Z"
 	if got != want {
 		t.Fatalf("credential = %q, want %q", got, want)
 	}
@@ -56,6 +57,7 @@ func TestNewSignedRegisterRequestSignsCanonicalCredential(t *testing.T) {
 	credential := buildIdentityRegisterCredential(
 		req.UserType,
 		req.UserName,
+		req.LogisticsCompanyName,
 		req.IDCardNumber,
 		req.Email,
 		req.Phone,
@@ -129,12 +131,13 @@ func TestNewSignedRegisterRequestIncludesLogisticsUserType(t *testing.T) {
 	}
 
 	req, err := newSignedRegisterRequest(RegisterRequest{
-		UserType:     userTypeLogistics,
-		UserName:     "Logistics User",
-		IDCardNumber: "L123456789",
-		Email:        "logistics@example.com",
-		Phone:        "0912345678",
-		PublicKey:    publicKey,
+		UserType:             userTypeLogistics,
+		UserName:             "Logistics User",
+		LogisticsCompanyName: "Fast Delivery",
+		IDCardNumber:         "L123456789",
+		Email:                "logistics@example.com",
+		Phone:                "0912345678",
+		PublicKey:            publicKey,
 	}, privateKey, time.Date(2026, 7, 29, 8, 30, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("newSignedRegisterRequest() error = %v", err)
@@ -143,14 +146,38 @@ func TestNewSignedRegisterRequestIncludesLogisticsUserType(t *testing.T) {
 	credential := buildIdentityRegisterCredential(
 		req.UserType,
 		req.UserName,
+		req.LogisticsCompanyName,
 		req.IDCardNumber,
 		req.Email,
 		req.Phone,
 		req.PublicKey,
 		req.Timestamp,
 	)
-	if !strings.HasPrefix(credential, "IDENTITY_REGISTER|1|") {
+	if !strings.HasPrefix(credential, "IDENTITY_REGISTER|1|Logistics User|Fast Delivery|") {
 		t.Fatalf("credential = %q, want logistics userType", credential)
+	}
+}
+
+func TestNewSignedRegisterRequestRejectsMissingLogisticsCompanyName(t *testing.T) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	publicKey, err := encodePublicKeyText(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("encodePublicKeyText() error = %v", err)
+	}
+
+	_, err = newSignedRegisterRequest(RegisterRequest{
+		UserType:     userTypeLogistics,
+		UserName:     "Logistics User",
+		IDCardNumber: "L123456789",
+		Email:        "logistics@example.com",
+		Phone:        "0912345678",
+		PublicKey:    publicKey,
+	}, privateKey, time.Now())
+	if err == nil {
+		t.Fatal("expected logisticsCompanyName validation error")
 	}
 }
 
