@@ -23,6 +23,9 @@ const el = {
   cachedSellerDID: document.querySelector("#cachedSellerDID"),
   tabButtons: document.querySelectorAll(".tab-button"),
   tabPanels: document.querySelectorAll(".tab-panel"),
+  userType: document.querySelector("#userType"),
+  logisticsCompanyNameField: document.querySelector("#logisticsCompanyNameField"),
+  logisticsCompanyName: document.querySelector("#logisticsCompanyName"),
   userName: document.querySelector("#userName"),
   idCardNumber: document.querySelector("#idCardNumber"),
   email: document.querySelector("#email"),
@@ -106,6 +109,7 @@ function init() {
   el.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tab));
   });
+  el.userType.addEventListener("change", updateRegistrationTypeFields);
   el.registerButton.addEventListener("click", registerUser);
   el.loginButton.addEventListener("click", login);
   el.registerAssetButton.addEventListener("click", registerAsset);
@@ -125,7 +129,18 @@ function init() {
     sessionStorage.setItem("demo.userDID", state.userDID);
   });
   el.finalizingTime.value = formatTaipeiDateTimeInput(new Date(Date.now() + 60 * 60 * 1000));
+  updateRegistrationTypeFields();
   updateTransactionModeFields();
+}
+
+function updateRegistrationTypeFields() {
+  const isLogisticsPersonnel = el.userType.value === "1";
+  el.logisticsCompanyNameField.hidden = !isLogisticsPersonnel;
+  el.logisticsCompanyName.required = isLogisticsPersonnel;
+
+  if (!isLogisticsPersonnel) {
+    el.logisticsCompanyName.value = "";
+  }
 }
 
 async function loadSelectedIdentityFile() {
@@ -166,6 +181,8 @@ function applyIdentityCache(body, note) {
 
 async function registerUser() {
   const payload = {
+    userType: Number(el.userType.value),
+    logisticsCompanyName: el.logisticsCompanyName.value.trim(),
     userName: el.userName.value.trim(),
     idCardNumber: el.idCardNumber.value.trim(),
     email: el.email.value.trim(),
@@ -178,6 +195,15 @@ async function registerUser() {
       success: false,
       message: "userName, idCardNumber, email, and phone are required",
     });
+    return;
+  }
+  if (payload.userType === 1 && !payload.logisticsCompanyName) {
+    setStatus(el.registerState, "bad", "Missing company name");
+    renderJSON(el.registerResult, {
+      success: false,
+      message: "Logistics Company Name is required for logistics personnel",
+    });
+    el.logisticsCompanyName.focus();
     return;
   }
 

@@ -72,6 +72,17 @@
 
         <div class="form-grid">
           <label>
+            User Type
+            <select id="userType">
+              <option value="0" selected>General User</option>
+              <option value="1">Logistics Personnel</option>
+            </select>
+          </label>
+          <label id="logisticsCompanyNameField" class="conditional-field" hidden>
+            Logistics Company Name
+            <input id="logisticsCompanyName" type="text" autocomplete="organization" />
+          </label>
+          <label>
             User Name
             <input id="userName" type="text" value="PropertyOwner01" autocomplete="off" />
           </label>
@@ -363,6 +374,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=20260725-seller-credit-policy"></script>
+    <script src="./app.js?v=20260731-registration-user-type"></script>
   </body>
 </html>

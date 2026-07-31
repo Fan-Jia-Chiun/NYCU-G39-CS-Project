@@ -217,6 +217,10 @@ label {
   font-weight: 700;
 }
 
+.conditional-field[hidden] {
+  display: none;
+}
+
 input,
 textarea,
 select,
