@@ -8,11 +8,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
-const identityRegisterTimestampSkew = 60 * time.Second
+const (
+	identityRegisterTimestampSkew = 60 * time.Second
+	userTypeGeneral               = uint(0)
+	userTypeLogistics             = uint(1)
+)
 
 type registrationVerificationError struct {
 	StatusCode    int
@@ -57,6 +62,7 @@ func verifyIdentityRegisterRequest(
 	}
 
 	credential := buildIdentityRegisterCredential(
+		req.UserType,
 		req.UserName,
 		req.IDCardNumber,
 		req.Email,
@@ -76,8 +82,9 @@ func verifyIdentityRegisterRequest(
 }
 
 // Canonical Message: Registration & Initialization
-// format: IDENTITY_REGISTER|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
+// format: IDENTITY_REGISTER|<userType>|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
 func buildIdentityRegisterCredential(
+	userType uint,
 	userName string,
 	idCardNumber string,
 	email string,
@@ -86,6 +93,7 @@ func buildIdentityRegisterCredential(
 	timestamp string,
 ) string {
 	return "IDENTITY_REGISTER|" +
+		strconv.FormatUint(uint64(userType), 10) + "|" +
 		userName + "|" +
 		idCardNumber + "|" +
 		email + "|" +

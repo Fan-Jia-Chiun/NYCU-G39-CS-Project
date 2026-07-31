@@ -13,6 +13,7 @@ import (
 )
 
 type RegisterRequest struct {
+	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
 	UserName     string `json:"userName"`
 	IDCardNumber string `json:"idCardNumber"`
 	Email        string `json:"email"`
@@ -35,6 +36,7 @@ func main() {
 	assetURL := flag.String("assetURL", "http://localhost:8082/assets", "transaction server asset registration endpoint")
 	transactionURL := flag.String("transactionURL", "http://localhost:8082/transactions/launch", "transaction launch endpoint")
 	helperAddr := flag.String("helperAddr", "127.0.0.1:8090", "local signing helper listen address")
+	userType := flag.Uint("userType", userTypeGeneral, "user type: 0 general user, 1 logistics personnel")
 	userName := flag.String("userName", "", "user name")
 	idCardNumber := flag.String("idCardNumber", "", "ID card number")
 	email := flag.String("email", "", "email")
@@ -57,6 +59,7 @@ func main() {
 	switch *mode {
 	case "register":
 		if err := runRegister(*registerURL, *keyDir, RegisterRequest{
+			UserType:     *userType,
 			UserName:     *userName,
 			IDCardNumber: *idCardNumber,
 			Email:        *email,

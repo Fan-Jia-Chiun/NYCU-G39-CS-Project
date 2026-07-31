@@ -6,8 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	userTypeGeneral   uint = 0
+	userTypeLogistics uint = 1
 )
 
 func newSignedRegisterRequest(
@@ -15,6 +21,10 @@ func newSignedRegisterRequest(
 	privateKey *ecdsa.PrivateKey,
 	now time.Time,
 ) (RegisterRequest, error) {
+	if req.UserType > userTypeLogistics {
+		return RegisterRequest{}, fmt.Errorf("userType must be 0 or 1")
+	}
+
 	req.UserName = strings.TrimSpace(req.UserName)
 	req.IDCardNumber = strings.TrimSpace(req.IDCardNumber)
 	req.Email = strings.TrimSpace(req.Email)
@@ -50,6 +60,7 @@ func newSignedRegisterRequest(
 
 	req.Timestamp = now.UTC().Format(time.RFC3339)
 	credential := buildIdentityRegisterCredential(
+		req.UserType,
 		req.UserName,
 		req.IDCardNumber,
 		req.Email,
@@ -69,8 +80,9 @@ func newSignedRegisterRequest(
 }
 
 // Canonical Message: Registration & Initialization
-// format: IDENTITY_REGISTER|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
+// format: IDENTITY_REGISTER|<userType>|<userName>|<idCardNumber>|<email>|<phone>|<publicKey>|<timestamp>
 func buildIdentityRegisterCredential(
+	userType uint,
 	userName string,
 	idCardNumber string,
 	email string,
@@ -79,6 +91,7 @@ func buildIdentityRegisterCredential(
 	timestamp string,
 ) string {
 	return "IDENTITY_REGISTER|" +
+		strconv.FormatUint(uint64(userType), 10) + "|" +
 		userName + "|" +
 		idCardNumber + "|" +
 		email + "|" +

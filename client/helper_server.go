@@ -53,6 +53,7 @@ type signAssetResponse struct {
 }
 
 type apiRegisterRequest struct {
+	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
 	UserName     string `json:"userName"`
 	IDCardNumber string `json:"idCardNumber"`
 	Email        string `json:"email"`
@@ -265,6 +266,7 @@ func (s helperServer) apiRegisterHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	registerRequest, err := newSignedRegisterRequest(RegisterRequest{
+		UserType:     req.UserType,
 		UserName:     req.UserName,
 		IDCardNumber: req.IDCardNumber,
 		Email:        req.Email,

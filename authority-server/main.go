@@ -14,6 +14,7 @@ import (
 )
 
 type RegisterRequest struct {
+	UserType     uint   `json:"userType"` // 0: general user, 1: logistics personnel
 	UserName     string `json:"userName"`
 	IDCardNumber string `json:"idCardNumber"`
 	Email        string `json:"email"`
@@ -97,7 +98,7 @@ func registerHandler(fabricGateway *FabricGateway, transactionServerURL string) 
 			return
 		}
 
-		log.Printf("received verified register request for userName=%q email=%q", req.UserName, req.Email)
+		log.Printf("received verified register request for userType=%d userName=%q email=%q", req.UserType, req.UserName, req.Email)
 
 		// Ask IDMgr to generate a novel user DID and PIMgr for the user.
 		result, err := fabricGateway.Contract.SubmitTransaction("RegisterIdentity")
@@ -215,6 +216,9 @@ func normalizeRegisterRequest(req *RegisterRequest) {
 }
 
 func validateRegisterRequest(req RegisterRequest) error {
+	if req.UserType > userTypeLogistics {
+		return fmt.Errorf("userType must be 0 or 1")
+	}
 	if req.UserName == "" {
 		return fmt.Errorf("userName is required")
 	}
